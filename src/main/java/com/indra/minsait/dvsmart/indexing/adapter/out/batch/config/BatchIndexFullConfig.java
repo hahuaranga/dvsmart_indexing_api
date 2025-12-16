@@ -13,12 +13,12 @@
  */
 package com.indra.minsait.dvsmart.indexing.adapter.out.batch.config;
 
+import com.indra.minsait.dvsmart.indexing.adapter.out.batch.processor.MetadataExtractorProcessor;
 import com.indra.minsait.dvsmart.indexing.adapter.out.batch.reader.DirectoryQueueItemReader;
 import com.indra.minsait.dvsmart.indexing.adapter.out.batch.writer.BulkUpsertMongoItemWriter;
 import com.indra.minsait.dvsmart.indexing.domain.model.ArchivoMetadata;
 import com.indra.minsait.dvsmart.indexing.domain.model.SftpFileEntry;
 import com.indra.minsait.dvsmart.indexing.domain.service.DirectoryDiscoveryService;
-import com.indra.minsait.dvsmart.indexing.domain.service.FileMetadataService;
 import com.indra.minsait.dvsmart.indexing.infrastructure.config.BatchConfigProperties;
 import com.indra.minsait.dvsmart.indexing.infrastructure.config.SftpConfigProperties;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +31,6 @@ import org.springframework.batch.core.job.parameters.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.Step;
 import org.springframework.batch.core.step.builder.StepBuilder;
-import org.springframework.batch.infrastructure.item.ItemProcessor;
 import org.springframework.batch.infrastructure.item.ItemReader;
 import org.springframework.batch.integration.async.AsyncItemProcessor;
 import org.springframework.batch.integration.async.AsyncItemWriter;
@@ -56,11 +55,11 @@ import java.util.concurrent.Future;
 public class BatchIndexFullConfig {
 
     private final JobRepository jobRepository;
-    private final FileMetadataService metadataService;
     private final DirectoryDiscoveryService directoryDiscoveryService;
     private final BulkUpsertMongoItemWriter bulkWriter;
     private final BatchConfigProperties batchProps;
     private final SftpConfigProperties sftpProps;
+    private final MetadataExtractorProcessor metadataExtractorProcessor;
     
     // ✅ Inyectar template directamente (más limpio)
     @Qualifier("sftpOriginTemplate")
@@ -77,7 +76,7 @@ public class BatchIndexFullConfig {
         executor.setCorePoolSize(batchProps.getThreadPoolSize());
         executor.setMaxPoolSize(batchProps.getThreadPoolSize());
         executor.setQueueCapacity(batchProps.getQueueCapacity());
-        executor.setThreadNamePrefix("index-async-");
+        executor.setThreadNamePrefix("batch-index-async-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(60);
         executor.initialize();
@@ -110,19 +109,9 @@ public class BatchIndexFullConfig {
     }
 
     @Bean
-    ItemProcessor<SftpFileEntry, ArchivoMetadata> metadataProcessor() {
-        return entry -> {
-            if (entry == null || entry.isDirectory()) {
-                return null;
-            }
-            return metadataService.toMetadata(entry);
-        };
-    }
-
-    @Bean
     AsyncItemProcessor<SftpFileEntry, ArchivoMetadata> asyncMetadataProcessor() {
         AsyncItemProcessor<SftpFileEntry, ArchivoMetadata> asyncProcessor = 
-            new AsyncItemProcessor<>(metadataProcessor());
+            new AsyncItemProcessor<>(metadataExtractorProcessor);
         asyncProcessor.setTaskExecutor(indexingTaskExecutor());
         return asyncProcessor;
     }
