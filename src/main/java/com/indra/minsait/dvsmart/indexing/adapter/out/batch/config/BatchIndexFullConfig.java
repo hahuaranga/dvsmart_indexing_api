@@ -134,7 +134,7 @@ public class BatchIndexFullConfig {
     @Bean(name = "batchIndexFullJob")
     Job batchIndexFullJob() {
         return new JobBuilder("BATCH-INDEX-FULL", jobRepository)
-                .incrementer(new RunIdIncrementer())
+                //.incrementer(new RunIdIncrementer())
                 .start(indexingStep())
                 .build();
     }
