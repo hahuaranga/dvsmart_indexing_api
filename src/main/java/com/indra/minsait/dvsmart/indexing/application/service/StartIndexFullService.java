@@ -16,11 +16,12 @@ package com.indra.minsait.dvsmart.indexing.application.service;
 import com.indra.minsait.dvsmart.indexing.application.port.in.StartIndexFullUseCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.batch.core.launch.JobInstanceAlreadyExistsException;
+import org.springframework.batch.core.job.Job;
+import org.springframework.batch.core.job.JobExecution;
+import org.springframework.batch.core.job.parameters.JobParameters;
+import org.springframework.batch.core.job.parameters.JobParametersBuilder;
 import org.springframework.batch.core.launch.JobOperator;
-import org.springframework.batch.core.launch.NoSuchJobException;
 import org.springframework.stereotype.Service;
-import java.util.Properties;
 
 /**
  * Author: hahuaranga@indracompany.com
@@ -35,26 +36,23 @@ public class StartIndexFullService implements StartIndexFullUseCase {
 
     private final JobOperator jobOperator;
 
+    private final Job batchIndexFullJob;
+    
     @Override
     public Long execute() {
-        try {
-            // Crear Properties con los parámetros del job
-            Properties jobProperties = new Properties();
-            jobProperties.setProperty("timestamp", String.valueOf(System.currentTimeMillis()));
-            
+        try {           
+            // ✅ JobParametersBuilder en lugar de Properties
+            JobParameters jobParameters = new JobParametersBuilder()
+                    .addLong("timestamp", System.currentTimeMillis())
+                    .toJobParameters();        	
+        	
             // Lanzar job usando el nombre del job (definido en BatchIndexFullConfig)
-            Long jobExecutionId = jobOperator.start("BATCH-INDEX-FULL", jobProperties);
+            JobExecution jobExecution = jobOperator.start(batchIndexFullJob, jobParameters);
             
-            log.info("Job launched successfully. JobExecutionId: {}", jobExecutionId);
+            log.info("Job launched successfully. JobExecutionId: {}", jobExecution.getId());
             
-            return jobExecutionId;
+            return jobExecution.getId();
             
-        } catch (NoSuchJobException e) {
-            log.error("Job not found in registry: BATCH-INDEX-FULL", e);
-            throw new RuntimeException("Job 'BATCH-INDEX-FULL' not registered in JobRegistry", e);
-        } catch (JobInstanceAlreadyExistsException e) {
-            log.warn("Job instance already exists with these parameters", e);
-            throw new RuntimeException("Duplicate job instance. Job may already be running.", e);
         } catch (Exception e) {
             log.error("Failed to launch batch job", e);
             throw new RuntimeException("Failed to start reorganization job", e);
