@@ -16,6 +16,8 @@ package com.indra.minsait.dvsmart.indexing.application.service;
 import com.indra.minsait.dvsmart.indexing.application.port.in.StartIndexFullUseCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+
 import org.springframework.batch.core.job.Job;
 import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.job.parameters.JobParameters;
@@ -39,17 +41,26 @@ public class StartIndexFullService implements StartIndexFullUseCase {
     private final Job batchIndexFullJob;
     
     @Override
+    @SchedulerLock(
+            name = "batchIndexFullJob", // Nombre único del lock
+            lockAtMostFor = "4h",       // Máximo 4 horas si crashea
+            lockAtLeastFor = "1s"       // Mínimo 1 segundo
+        )
     public Long execute() {
+        // ShedLock automáticamente adquiere el lock aquí
+        // Si otro proceso ya tiene el lock, lanza UnableToAcquireLockException
         try {           
             // ✅ JobParametersBuilder en lugar de Properties
             JobParameters jobParameters = new JobParametersBuilder()
                     .addLong("timestamp", System.currentTimeMillis())
+                    .addString("uniqueId", java.util.UUID.randomUUID().toString())
                     .toJobParameters();        	
         	
             // Lanzar job usando el nombre del job (definido en BatchIndexFullConfig)
             JobExecution jobExecution = jobOperator.start(batchIndexFullJob, jobParameters);
             
-            log.info("Job launched successfully. JobExecutionId: {}", jobExecution.getId());
+            log.info("Job launched successfully. JobExecutionId: {}, Status: {}", 
+                    jobExecution.getId(), jobExecution.getStatus());
             
             return jobExecution.getId();
             
@@ -57,5 +68,6 @@ public class StartIndexFullService implements StartIndexFullUseCase {
             log.error("Failed to launch batch job", e);
             throw new RuntimeException("Failed to start reorganization job", e);
         }
+        // ShedLock automáticamente libera el lock aquí cuando el método termina
     }
 }

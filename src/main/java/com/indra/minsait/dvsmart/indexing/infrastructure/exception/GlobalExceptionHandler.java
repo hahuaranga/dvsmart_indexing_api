@@ -72,4 +72,23 @@ public class GlobalExceptionHandler {
                     "message", "An unexpected error occurred"
                 ));
     }
+    
+    /**
+     * Maneja el caso cuando se intenta ejecutar un job que ya está corriendo.
+     * Retorna HTTP 409 CONFLICT con mensaje descriptivo.
+     */
+    @ExceptionHandler(JobAlreadyRunningException.class)
+    public ResponseEntity<Map<String, Object>> handleJobAlreadyRunning(JobAlreadyRunningException ex) {
+        log.warn("Job execution conflict: {}", ex.getMessage());
+        
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(Map.of(
+                    "timestamp", Instant.now().toString(),
+                    "status", HttpStatus.CONFLICT.value(),
+                    "error", "Conflict",
+                    "message", ex.getMessage(),
+                    "detail", "Please wait for the current job to complete before starting a new one"
+                ));
+    }    
 }

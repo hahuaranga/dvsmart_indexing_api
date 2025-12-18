@@ -27,6 +27,8 @@
 		<!-- Other dependencies -->
 		<lombok.version>1.18.30</lombok.version>
 		<sshj.version>0.38.0</sshj.version>
+		<!-- ✅ ShedLock para bloqueo distribuido -->
+		<shedlock.version>5.10.2</shedlock.version>
 	</properties>
 
 	<dependencies>
@@ -121,6 +123,20 @@
 			<artifactId>spring-integration-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		
+		<!-- ✅ ShedLock Core -->
+		<dependency>
+			<groupId>net.javacrumbs.shedlock</groupId>
+			<artifactId>shedlock-spring</artifactId>
+			<version>${shedlock.version}</version>
+		</dependency>
+
+		<!-- ✅ ShedLock MongoDB Provider -->
+		<dependency>
+			<groupId>net.javacrumbs.shedlock</groupId>
+			<artifactId>shedlock-provider-mongo</artifactId>
+			<version>${shedlock.version}</version>
+		</dependency>		
 	</dependencies>
 
 	<build>

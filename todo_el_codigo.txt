@@ -1,0 +1,2027 @@
+════════════════════════════════════════════════
+ARCHIVO: ./pom.xml
+════════════════════════════════════════════════
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>4.0.0</version>
+	</parent>
+	<groupId>com.indra.minsait.dvsmart.indexing</groupId>
+	<artifactId>dvsmart_indexing_api</artifactId>
+	<version>1.0.0-SNAPSHOT</version>
+	<name>dvsmart_indexing_api</name>
+
+	<properties>
+		<java.version>21</java.version>
+		<maven.compiler.source>21</maven.compiler.source>
+		<maven.compiler.target>21</maven.compiler.target>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+		<license.maven.plugin.version>5.0.0</license.maven.plugin.version>
+		<maven.build.timestamp.format>yyyy</maven.build.timestamp.format>
+
+		<spring-batch.version>6.0.0</spring-batch.version>
+		<spring-integration.version>7.0.0</spring-integration.version>
+
+		<!-- Other dependencies -->
+		<lombok.version>1.18.30</lombok.version>
+		<sshj.version>0.38.0</sshj.version>
+	</properties>
+
+	<dependencies>
+		<!-- Spring Boot Starters -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-web</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-mongodb</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+
+		<!-- Spring Batch -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-batch</artifactId>
+		</dependency>
+
+		<!-- Spring Integration Core -->
+		<dependency>
+			<groupId>org.springframework.integration</groupId>
+			<artifactId>spring-integration-core</artifactId>
+		</dependency>
+
+		<!-- Spring Integration SFTP (SSHJ) -->
+		<dependency>
+			<groupId>org.springframework.integration</groupId>
+			<artifactId>spring-integration-sftp</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.batch</groupId>
+			<artifactId>spring-batch-integration</artifactId>
+		</dependency>
+
+		<!-- SSHJ for SFTP -->
+		<dependency>
+			<groupId>com.hierynomus</groupId>
+			<artifactId>sshj</artifactId>
+			<version>${sshj.version}</version>
+		</dependency>
+
+		<!-- Lombok -->
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<scope>provided</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-devtools</artifactId>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+
+		<!-- Spring Boot Configuration Processor -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-configuration-processor</artifactId>
+			<optional>true</optional>
+		</dependency>
+
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+
+		<!-- Testing -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.batch</groupId>
+			<artifactId>spring-batch-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.integration</groupId>
+			<artifactId>spring-integration-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<finalName>${project.artifactId}</finalName>
+		<plugins>
+
+			<!-- Maven Compiler Plugin -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<source>${java.version}</source>
+					<target>${java.version}</target>
+					<encoding>${project.build.sourceEncoding}</encoding>
+					<annotationProcessorPaths>
+						<path>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+							<version>${lombok.version}</version>
+						</path>
+						<path>
+							<groupId>org.springframework.boot</groupId>
+							<artifactId>spring-boot-configuration-processor</artifactId>
+							<version>4.0.0</version>
+						</path>
+					</annotationProcessorPaths>
+				</configuration>
+			</plugin>
+
+			<!-- Spring Boot Maven Plugin -->
+			<plugin>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<excludes>
+						<exclude>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+						</exclude>
+					</excludes>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>repackage</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- CopyRight Plugin -->
+			<plugin>
+				<groupId>com.mycila</groupId>
+				<artifactId>license-maven-plugin</artifactId>
+				<version>${license.maven.plugin.version}</version>
+				<configuration>
+					<!-- Ruta del banner -->
+					<header>src/main/resources/license-header.txt</header>
+
+					<!-- Aplicar solo a archivos donde corresponde -->
+					<includes>
+						<include>**/*.java</include>
+					</includes>
+
+					<!-- Evitar modificar código generado o configuraciones -->
+					<excludes>
+						<exclude>**/target/**</exclude>
+						<exclude>**/generated/**</exclude>
+					</excludes>
+
+					<!-- Variables dinámicas -->
+					<properties>
+						<year>${maven.build.timestamp}</year>
+					</properties>
+
+					<!-- Etiquetas conocidas para insertar correctamente el
+					header -->
+					<mapping>
+						<java>SLASHSTAR_STYLE</java>
+					</mapping>
+
+					<!-- Configuraciones adicionales importantes -->
+					<strictCheck>true</strictCheck>
+					<useDefaultExcludes>true</useDefaultExcludes>
+				</configuration>
+
+				<executions>
+					<!-- Ejecuta el format en la fase process-sources (antes de
+					compile) -->
+					<execution>
+						<id>apply-license-headers</id>
+						<phase>process-sources</phase>
+						<goals>
+							<goal>format</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- Maven Surefire Plugin (para tests) -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<!--				<version>3.0.0</version>-->
+				<configuration>
+					<includes>
+						<include>**/*Test.java</include>
+						<include>**/*Tests.java</include>
+					</includes>
+				</configuration>
+			</plugin>
+
+			<!-- Maven Resources Plugin -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<!--				<version>3.3.1</version>-->
+				<configuration>
+					<encoding>${project.build.sourceEncoding}</encoding>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+
+	<!-- Profiles -->
+	<profiles>
+		<!-- Development Profile -->
+		<profile>
+			<id>dev</id>
+			<activation>
+				<activeByDefault>true</activeByDefault>
+			</activation>
+			<properties>
+				<spring.profiles.active>dev</spring.profiles.active>
+			</properties>
+		</profile>
+
+		<!-- Production Profile -->
+		<profile>
+			<id>prod</id>
+			<properties>
+				<spring.profiles.active>prod</spring.profiles.active>
+			</properties>
+		</profile>
+	</profiles>
+
+</project>-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/adapter/in/web/BatchIndexingController.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.adapter.in.web;
+
+import com.indra.minsait.dvsmart.indexing.application.port.in.StartIndexFullUseCase;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import java.util.Map;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 12-12-2025 at 13:25:04
+ * File: BatchReorganizeController.java
+ */
+
+@Slf4j
+@RestController
+@RequestMapping("/api/batch/index")
+@RequiredArgsConstructor
+public class BatchIndexingController {
+
+    private final StartIndexFullUseCase startIndexingFullUseCase;
+
+    @PostMapping("/full")
+    public ResponseEntity<Map<String, Object>> startFullReorganization() {
+        log.info("Received request to start full indexing of disorganized files");
+        
+        Long jobExecutionId = startIndexingFullUseCase.execute();
+        
+        return ResponseEntity.accepted()
+                .body(Map.of(
+                    "message", "Batch job started successfully",
+                    "jobExecutionId", jobExecutionId,
+                    "status", "ACCEPTED"
+                ));
+    }
+}-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/adapter/out/batch/config/BatchIndexFullConfig.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.adapter.out.batch.config;
+
+import com.indra.minsait.dvsmart.indexing.adapter.out.batch.processor.MetadataExtractorProcessor;
+import com.indra.minsait.dvsmart.indexing.adapter.out.batch.reader.DirectoryQueueItemReader;
+import com.indra.minsait.dvsmart.indexing.adapter.out.batch.writer.BulkUpsertMongoItemWriter;
+import com.indra.minsait.dvsmart.indexing.domain.model.ArchivoMetadata;
+import com.indra.minsait.dvsmart.indexing.domain.model.SftpFileEntry;
+import com.indra.minsait.dvsmart.indexing.domain.service.DirectoryDiscoveryService;
+import com.indra.minsait.dvsmart.indexing.infrastructure.config.BatchConfigProperties;
+import com.indra.minsait.dvsmart.indexing.infrastructure.config.SftpConfigProperties;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.configuration.JobRegistry;
+import org.springframework.batch.core.configuration.support.MapJobRegistry;
+import org.springframework.batch.core.job.Job;
+import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.job.parameters.RunIdIncrementer;
+import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.step.Step;
+import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.infrastructure.item.ItemReader;
+import org.springframework.batch.integration.async.AsyncItemProcessor;
+import org.springframework.batch.integration.async.AsyncItemWriter;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import java.util.Queue;
+import java.util.concurrent.Future;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 12-12-2025 at 13:23:54
+ * File: BatchReorgFullConfig.java
+ */
+
+@Slf4j
+@Configuration
+@RequiredArgsConstructor
+public class BatchIndexFullConfig {
+
+    private final JobRepository jobRepository;
+    private final DirectoryDiscoveryService directoryDiscoveryService;
+    private final BulkUpsertMongoItemWriter bulkWriter;
+    private final BatchConfigProperties batchProps;
+    private final SftpConfigProperties sftpProps;
+    private final MetadataExtractorProcessor metadataExtractorProcessor;
+    
+    // ✅ Inyectar template directamente (más limpio)
+    @Qualifier("sftpOriginTemplate")
+    private final SftpRemoteFileTemplate sftpTemplate;
+
+    @Bean
+    JobRegistry jobRegistry() {
+        return new MapJobRegistry();
+    }
+
+    @Bean(name = "indexingTaskExecutor")
+    TaskExecutor indexingTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(batchProps.getThreadPoolSize());
+        executor.setMaxPoolSize(batchProps.getThreadPoolSize());
+        executor.setQueueCapacity(batchProps.getQueueCapacity());
+        executor.setThreadNamePrefix("batch-index-async-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(60);
+        executor.initialize();
+        return executor;
+    }
+
+    /**
+     * Pre-procesamiento: Descubrir todos los directorios.
+     * Usa template para manejo seguro de sesiones.
+     */
+    private Queue<String> discoverDirectoriesBeforeJob() {
+        log.info("Starting directory discovery phase...");
+        
+        // ✅ Template maneja la sesión automáticamente
+        return directoryDiscoveryService.discoverDirectories(
+            sftpTemplate,
+            sftpProps.getOrigin().getBaseDir()
+        );
+    }
+
+    /**
+     * Reader que consume la queue de directorios.
+     */
+    @Bean
+    ItemReader<SftpFileEntry> directoryQueueReader() {
+        Queue<String> directoryQueue = discoverDirectoriesBeforeJob();
+        
+        // ✅ Pasar template al reader (no SessionFactory)
+        return new DirectoryQueueItemReader(sftpTemplate, directoryQueue);
+    }
+
+    @Bean
+    AsyncItemProcessor<SftpFileEntry, ArchivoMetadata> asyncMetadataProcessor() {
+        AsyncItemProcessor<SftpFileEntry, ArchivoMetadata> asyncProcessor = 
+            new AsyncItemProcessor<>(metadataExtractorProcessor);
+        asyncProcessor.setTaskExecutor(indexingTaskExecutor());
+        return asyncProcessor;
+    }
+
+    @Bean
+    AsyncItemWriter<ArchivoMetadata> asyncBulkWriter() {
+        return new AsyncItemWriter<>(bulkWriter);
+    }
+
+    @Bean
+    Step indexingStep() {
+        return new StepBuilder("indexingStep", jobRepository)
+                .<SftpFileEntry, Future<ArchivoMetadata>>chunk(500)
+                .reader(directoryQueueReader())
+                .processor(asyncMetadataProcessor())
+                .writer(asyncBulkWriter())
+                .build();
+    }
+
+    @Bean(name = "batchIndexFullJob")
+    Job batchIndexFullJob() {
+        return new JobBuilder("BATCH-INDEX-FULL", jobRepository)
+                //.incrementer(new RunIdIncrementer())
+                .start(indexingStep())
+                .build();
+    }
+}-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/adapter/out/batch/processor/MetadataExtractorProcessor.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.adapter.out.batch.processor;
+
+import com.indra.minsait.dvsmart.indexing.domain.model.ArchivoMetadata;
+import com.indra.minsait.dvsmart.indexing.domain.model.SftpFileEntry;
+import com.indra.minsait.dvsmart.indexing.domain.service.FileMetadataService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.infrastructure.item.ItemProcessor;
+import org.springframework.stereotype.Component;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 16-12-2025 at 16:33:10
+ * File: MetadataExtractorProcessor.java
+ */
+
+/**
+ * Processor que extrae metadata de archivos SFTP.
+ * 
+ * Responsabilidades:
+ * - Filtrar directorios
+ * - Filtrar archivos por extensión (opcional)
+ * - Validar tamaños (opcional)
+ * - Delegar extracción de metadata al servicio de dominio
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class MetadataExtractorProcessor implements ItemProcessor<SftpFileEntry, ArchivoMetadata> {
+
+    private final FileMetadataService metadataService;
+    
+    // Configuración opcional de filtros
+    private static final long MIN_FILE_SIZE = 0;           // 0 bytes = sin filtro
+    private static final long MAX_FILE_SIZE = Long.MAX_VALUE; // Sin límite
+
+    @Override
+    public ArchivoMetadata process(SftpFileEntry entry) throws Exception {
+        
+        // Filtro 1: Skip nulls
+        if (entry == null) {
+            return null;
+        }
+        
+        // Filtro 2: Skip directorios (no deberían llegar, pero por seguridad)
+        if (entry.isDirectory()) {
+            log.trace("Skipping directory: {}", entry.getFullPath());
+            return null;
+        }
+        
+        // Filtro 3: Skip archivos ocultos
+        if (entry.getFilename().startsWith(".")) {
+            log.trace("Skipping hidden file: {}", entry.getFilename());
+            return null;
+        }
+        
+        // Filtro 4: Skip archivos temporales
+        if (isTemporaryFile(entry.getFilename())) {
+            log.trace("Skipping temporary file: {}", entry.getFilename());
+            return null;
+        }
+        
+        // Filtro 5: Validar tamaño
+        if (entry.getSize() < MIN_FILE_SIZE || entry.getSize() > MAX_FILE_SIZE) {
+            log.warn("Skipping file with invalid size: {} ({} bytes)", 
+                     entry.getFullPath(), entry.getSize());
+            return null;
+        }
+        
+        // Extracción de metadata (lógica de dominio)
+        try {
+            ArchivoMetadata metadata = metadataService.toMetadata(entry);
+            log.trace("Processed: {} → {}", entry.getFullPath(), metadata.getIdUnico());
+            return metadata;
+            
+        } catch (Exception e) {
+            log.error("Error processing file: {}", entry.getFullPath(), e);
+            // Opción A: Retornar null (skip)
+            // Opción B: Re-lanzar excepción (fail y retry)
+            throw e;  // Fail-fast para errores inesperados
+        }
+    }
+    
+    /**
+     * Verifica si es un archivo temporal.
+     */
+    private boolean isTemporaryFile(String filename) {
+        String lower = filename.toLowerCase();
+        return lower.endsWith(".tmp") 
+            || lower.endsWith(".temp")
+            || lower.endsWith(".bak")
+            || lower.endsWith("~")
+            || lower.startsWith("~$");  // MS Office temp files
+    }
+}
+-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/adapter/out/batch/reader/DirectoryQueueItemReader.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.adapter.out.batch.reader;
+
+import com.indra.minsait.dvsmart.indexing.domain.model.SftpFileEntry;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.sshd.sftp.client.SftpClient;
+import org.springframework.batch.infrastructure.item.ItemReader;
+import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
+import java.util.LinkedList;
+import java.util.Queue;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 16-12-2025 at 14:55:25
+ * File: DirectoryQueueItemReader.java
+ */
+
+/**
+ * Reader optimizado que usa SftpRemoteFileTemplate.
+ * 
+ * Ventajas vs Session directa:
+ * - Thread-safe (puede usarse en async processors)
+ * - Session pooling automático
+ * - Error handling y retry integrados
+ * - Código más limpio y mantenible
+ */
+@Slf4j
+public class DirectoryQueueItemReader implements ItemReader<SftpFileEntry> {
+
+    private final SftpRemoteFileTemplate sftpTemplate;
+    private final Queue<String> directoryQueue;
+    private Queue<SftpFileEntry> currentDirectoryFiles;
+    
+    private int totalFilesRead = 0;
+    private int directoriesProcessed = 0;
+
+    public DirectoryQueueItemReader(
+            SftpRemoteFileTemplate sftpTemplate,
+            Queue<String> directoryQueue) {
+        this.sftpTemplate = sftpTemplate;
+        this.directoryQueue = directoryQueue;
+        this.currentDirectoryFiles = new LinkedList<>();
+    }
+
+    @Override
+    public SftpFileEntry read() throws Exception {
+        
+        // Retornar archivos del directorio actual
+        if (!currentDirectoryFiles.isEmpty()) {
+            totalFilesRead++;
+            return currentDirectoryFiles.poll();
+        }
+        
+        // Si no hay más directorios, terminar
+        if (directoryQueue.isEmpty()) {
+            log.info("Indexing completed. Total files: {}, Directories: {}", 
+                     totalFilesRead, directoriesProcessed);
+            return null;
+        }
+        
+        // Cargar siguiente directorio
+        String nextDirectory = directoryQueue.poll();
+        loadDirectoryFiles(nextDirectory);
+        directoriesProcessed++;
+        
+        if (directoriesProcessed % 100 == 0) {
+            log.info("Progress: {} directories, {} files", 
+                     directoriesProcessed, totalFilesRead);
+        }
+        
+        return read(); // Recursión para retornar primer archivo
+    }
+
+    /**
+     * Carga archivos de un directorio usando template.
+     * Session es adquirida y liberada automáticamente.
+     */
+    private void loadDirectoryFiles(String directory) {
+        try {
+            // ✅ Template maneja todo el ciclo de vida de la sesión
+            sftpTemplate.execute(session -> {
+                
+                log.debug("Scanning directory: {}", directory);
+                
+                SftpClient.DirEntry[] entries = session.list(directory);
+                int filesInDir = 0;
+                
+                for (SftpClient.DirEntry entry : entries) {
+                    String name = entry.getFilename();
+                    
+                    if (".".equals(name) || "..".equals(name)) {
+                        continue;
+                    }
+                    
+                    // Solo archivos (directorios ya están en queue)
+                    if (!entry.getAttributes().isDirectory()) {
+                        String fullPath = directory.endsWith("/") 
+                            ? directory + name 
+                            : directory + "/" + name;
+                        
+                        SftpFileEntry fileEntry = SftpFileEntry.builder()
+                                .fullPath(fullPath)
+                                .filename(name)
+                                .size(entry.getAttributes().getSize())
+                                .modificationTime(entry.getAttributes().getModifyTime().toMillis())
+                                .isDirectory(false)
+                                .build();
+                        
+                        currentDirectoryFiles.add(fileEntry);
+                        filesInDir++;
+                    }
+                }
+                
+                log.debug("Loaded {} files from {}", filesInDir, directory);
+                return null;
+                
+            }); // ← Session automáticamente liberada aquí
+            
+        } catch (Exception e) {
+            log.error("Error loading directory: {}", directory, e);
+            // Spring Batch manejará el retry según configuración
+            throw new RuntimeException("Failed to load directory: " + directory, e);
+        }
+    }
+}
+-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/adapter/out/batch/writer/BulkUpsertMongoItemWriter.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.adapter.out.batch.writer;
+
+import com.indra.minsait.dvsmart.indexing.adapter.out.persistence.mongodb.entity.DisorganizedFilesIndexDocument;
+import com.indra.minsait.dvsmart.indexing.domain.model.ArchivoMetadata;
+import com.mongodb.bulk.BulkWriteResult;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.infrastructure.item.Chunk;
+import org.springframework.batch.infrastructure.item.ItemWriter;
+import org.springframework.data.mongodb.core.BulkOperations;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Component;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 16-12-2025 at 14:44:55
+ * File: BulkUpsertMongoItemWriter.java
+ */
+
+/**
+ * Writer ultra-optimizado con bulk upsert.
+ * 
+ * Performance:
+ * - Sin bulk: 100-200 docs/segundo
+ * - Con bulk: 3000-5000 docs/segundo
+ * 
+ * Para 11M archivos:
+ * - Sin bulk: ~15-30 horas
+ * - Con bulk: ~30-60 minutos
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class BulkUpsertMongoItemWriter implements ItemWriter<ArchivoMetadata> {
+
+    private final MongoTemplate mongoTemplate;
+    private long totalInserted = 0;
+    private long totalUpdated = 0;
+
+    @Override
+    public void write(Chunk<? extends ArchivoMetadata> chunk) {
+        
+        BulkOperations bulkOps = mongoTemplate.bulkOps(
+            BulkOperations.BulkMode.UNORDERED, // Continuar si hay errores
+            DisorganizedFilesIndexDocument.class
+        );
+        
+        for (ArchivoMetadata metadata : chunk) {
+            Query query = new Query(Criteria.where("idUnico").is(metadata.getIdUnico()));
+            
+            Update update = new Update()
+                    .set("rutaOrigen", metadata.getRutaOrigen())
+                    .set("nombre", metadata.getNombre())
+                    .set("mtime", metadata.getMtime())
+                    .set("tamanio", metadata.getTamanio())
+                    .set("extension", metadata.getExtension())
+                    .set("indexadoEn", metadata.getIndexadoEn())
+                    .setOnInsert("idUnico", metadata.getIdUnico()); // Solo en insert
+            
+            bulkOps.upsert(query, update);
+        }
+        
+        try {
+            BulkWriteResult result = bulkOps.execute();
+            
+            int inserted = result.getInsertedCount();
+            int updated = result.getModifiedCount();
+            
+            totalInserted += inserted;
+            totalUpdated += updated;
+            
+            log.debug("Bulk write completed: {} inserted, {} updated (Total: {}/{})", 
+                     inserted, updated, totalInserted, totalUpdated);
+            
+        } catch (Exception e) {
+            log.error("Error in bulk write operation", e);
+            throw new RuntimeException("Failed to write batch to MongoDB", e);
+        }
+    }
+}
+-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/adapter/out/persistence/mongodb/entity/DisorganizedFilesIndexDocument.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.adapter.out.persistence.mongodb.entity;
+
+import lombok.Builder;
+import lombok.Data;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
+import java.time.Instant;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 16-12-2025 at 14:51:33
+ * File: DisorganizedFilesIndexDocument.java
+ */
+
+/**
+ * Documento MongoDB para colección disorganized-files-index.
+ * Representa un archivo indexado desde SFTP.
+ */
+@Data
+@Builder
+@Document(collection = "disorganized-files-index")
+public class DisorganizedFilesIndexDocument {
+    
+    @Id
+    private String id;                // MongoDB _id (auto-generado)
+    
+    @Indexed(unique = true)
+    private String idUnico;           // SHA-256 del path completo
+    
+    private String rutaOrigen;        // Path completo en SFTP
+    private String nombre;            // Nombre del archivo
+    private Instant mtime;            // Fecha modificación
+    private Long tamanio;             // Tamaño en bytes
+    private String extension;         // Extensión
+    private Instant indexadoEn;       // Timestamp indexación
+}
+-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/application/port/in/StartIndexFullUseCase.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.application.port.in;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 12-12-2025 at 12:30:07
+ * File: StartReorganizeFullUseCase.java
+ */
+
+public interface StartIndexFullUseCase {
+    Long execute();
+}
+-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/application/service/StartIndexFullService.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.application.service;
+
+import com.indra.minsait.dvsmart.indexing.application.port.in.StartIndexFullUseCase;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.job.Job;
+import org.springframework.batch.core.job.JobExecution;
+import org.springframework.batch.core.job.parameters.JobParameters;
+import org.springframework.batch.core.job.parameters.JobParametersBuilder;
+import org.springframework.batch.core.launch.JobOperator;
+import org.springframework.stereotype.Service;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 12-12-2025 at 12:54:15
+ * File: StartReorganizeFullService.java
+ */
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class StartIndexFullService implements StartIndexFullUseCase {
+
+    private final JobOperator jobOperator;
+
+    private final Job batchIndexFullJob;
+    
+    @Override
+    public Long execute() {
+        try {           
+            // ✅ JobParametersBuilder en lugar de Properties
+            JobParameters jobParameters = new JobParametersBuilder()
+                    .addLong("timestamp", System.currentTimeMillis())
+                    .toJobParameters();        	
+        	
+            // Lanzar job usando el nombre del job (definido en BatchIndexFullConfig)
+            JobExecution jobExecution = jobOperator.start(batchIndexFullJob, jobParameters);
+            
+            log.info("Job launched successfully. JobExecutionId: {}", jobExecution.getId());
+            
+            return jobExecution.getId();
+            
+        } catch (Exception e) {
+            log.error("Failed to launch batch job", e);
+            throw new RuntimeException("Failed to start reorganization job", e);
+        }
+    }
+}-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/domain/model/ArchivoMetadata.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.domain.model;
+
+import lombok.Builder;
+import lombok.Data;
+import java.time.Instant;
+
+/**
+ * Modelo de dominio que representa la metadata de un archivo indexado.
+ */
+@Data
+@Builder
+public class ArchivoMetadata {
+    private String idUnico;           // Hash del path completo
+    private String rutaOrigen;        // Path completo en SFTP
+    private String nombre;            // Nombre del archivo
+    private Instant mtime;            // Fecha de modificación
+    private Long tamanio;             // Tamaño en bytes
+    private String extension;         // Extensión del archivo
+    private Instant indexadoEn;       // Timestamp de indexación
+}
+-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/domain/model/SftpFileEntry.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.domain.model;
+
+import lombok.Builder;
+import lombok.Data;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 16-12-2025 at 14:35:09
+ * File: SftpFileEntry.java
+ */
+
+/**
+ * Representa una entrada de archivo en el listado de SFTP.
+ * Modelo intermedio antes de convertir a ArchivoMetadata.
+ */
+@Data
+@Builder
+public class SftpFileEntry {
+    private String fullPath;          // Path completo (/data/files/doc.pdf)
+    private String filename;          // Nombre del archivo (doc.pdf)
+    private long size;                // Tamaño en bytes
+    private long modificationTime;    // Unix timestamp (millis)
+    private boolean isDirectory;      // true si es directorio
+}
+-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/domain/service/DirectoryDiscoveryService.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.domain.service;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.sshd.sftp.client.SftpClient;
+import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
+import org.springframework.stereotype.Service;
+import java.util.LinkedList;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 16-12-2025 at 14:40:25
+ * File: DirectoryDiscoveryService.java
+ */
+
+/**
+ * Servicio de descubrimiento de directorios usando SftpRemoteFileTemplate.
+ */
+@Slf4j
+@Service
+public class DirectoryDiscoveryService {
+
+    /**
+     * Descubre recursivamente todos los directorios bajo baseDir.
+     * Usa template para manejo automático de sesiones.
+     * 
+     * @param sftpTemplate Template configurado
+     * @param baseDir Directorio raíz
+     * @return Cola thread-safe de directorios
+     */
+    public Queue<String> discoverDirectories(
+            SftpRemoteFileTemplate sftpTemplate,
+            String baseDir) {
+        
+        log.info("Starting directory discovery from: {}", baseDir);
+        
+        Queue<String> directories = new ConcurrentLinkedQueue<>();
+        
+        try {
+            // ✅ Una sola sesión para todo el escaneo (más eficiente)
+            sftpTemplate.execute(session -> {
+                try {
+					scanRecursive(session, baseDir, directories);
+				} catch (Exception e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+                return null;
+            });
+            
+            log.info("Directory discovery completed. Total: {}", directories.size());
+            return directories;
+            
+        } catch (Exception e) {
+            log.error("Failed to discover directories", e);
+            throw new RuntimeException("Directory discovery failed", e);
+        }
+    }
+
+    /**
+     * Escaneo recursivo BFS interno (dentro de una sesión).
+     */
+    private void scanRecursive(
+            org.springframework.integration.file.remote.session.Session<SftpClient.DirEntry> session,
+            String baseDir,
+            Queue<String> directories) throws Exception {
+        
+        Queue<String> toExplore = new LinkedList<>();
+        toExplore.add(baseDir);
+        directories.add(baseDir);
+        
+        int dirCount = 0;
+        
+        while (!toExplore.isEmpty()) {
+            String currentDir = toExplore.poll();
+            
+            SftpClient.DirEntry[] entries = session.list(currentDir);
+            
+            for (SftpClient.DirEntry entry : entries) {
+                String name = entry.getFilename();
+                
+                if (".".equals(name) || "..".equals(name)) {
+                    continue;
+                }
+                
+                if (entry.getAttributes().isDirectory()) {
+                    String fullPath = currentDir.endsWith("/") 
+                        ? currentDir + name 
+                        : currentDir + "/" + name;
+                    
+                    directories.add(fullPath);
+                    toExplore.add(fullPath);
+                    dirCount++;
+                    
+                    if (dirCount % 1000 == 0) {
+                        log.info("Discovered {} directories...", dirCount);
+                    }
+                }
+            }
+        }
+    }
+}
+-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/domain/service/FileMetadataService.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.domain.service;
+
+import com.indra.minsait.dvsmart.indexing.domain.model.ArchivoMetadata;
+import com.indra.minsait.dvsmart.indexing.domain.model.SftpFileEntry;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 16-12-2025 at 13:56:41
+ * File: FileMetadataService.java
+ */
+
+/**
+ * Servicio de dominio para procesar metadata de archivos.
+ * Lógica pura sin dependencias de frameworks.
+ */
+@Slf4j
+@Service
+public class FileMetadataService {
+
+    /**
+     * Convierte un SftpFileEntry a ArchivoMetadata con todos los campos calculados.
+     */
+    public ArchivoMetadata toMetadata(SftpFileEntry entry) {
+        String extension = extractExtension(entry.getFilename());
+        String idUnico = generateIdUnico(entry.getFullPath());
+        
+        return ArchivoMetadata.builder()
+                .idUnico(idUnico)
+                .rutaOrigen(entry.getFullPath())
+                .nombre(entry.getFilename())
+                .mtime(Instant.ofEpochMilli(entry.getModificationTime()))
+                .tamanio(entry.getSize())
+                .extension(extension)
+                .indexadoEn(Instant.now())
+                .build();
+    }
+
+    /**
+     * Genera un ID único basado en el path completo usando SHA-256.
+     */
+    public String generateIdUnico(String fullPath) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashBytes = digest.digest(fullPath.getBytes(StandardCharsets.UTF_8));
+            return bytesToHex(hashBytes);
+        } catch (NoSuchAlgorithmException e) {
+            log.error("SHA-256 algorithm not available", e);
+            throw new RuntimeException("Failed to generate unique ID", e);
+        }
+    }
+
+    /**
+     * Extrae la extensión del archivo.
+     */
+    private String extractExtension(String filename) {
+        if (filename == null || !filename.contains(".")) {
+            return "";
+        }
+        int lastDot = filename.lastIndexOf('.');
+        return filename.substring(lastDot + 1).toLowerCase();
+    }
+
+    private String bytesToHex(byte[] bytes) {
+        StringBuilder hexString = new StringBuilder();
+        for (byte b : bytes) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) {
+                hexString.append('0');
+            }
+            hexString.append(hex);
+        }
+        return hexString.toString();
+    }
+}-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/infrastructure/config/BatchConfigProperties.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.infrastructure.config;
+
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 12-12-2025 at 12:25:45
+ * File: BatchConfigProperties.java
+ */
+
+@Getter
+@Setter
+@ConfigurationProperties(prefix = "batch")
+public class BatchConfigProperties {
+    private int chunkSize = 100;
+    private int concurrencyLimit = 10;
+    private int threadPoolSize = 20;
+    private int queueCapacity = 1000;
+}
+-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/infrastructure/config/SftpConfigProperties.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.infrastructure.config;
+
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 12-12-2025 at 11:03:22
+ * File: SftpConfigProperties.java
+ */
+
+@Getter
+@Setter
+@ConfigurationProperties(prefix = "sftp")
+public class SftpConfigProperties {
+    
+    private Origin origin = new Origin();
+    
+    @Getter
+    @Setter
+    public static class Origin {
+        private String host;
+        private int port = 22;
+        private String user;
+        private String password;
+        private String baseDir;
+        private Pool pool = new Pool();
+        private int timeout = 30000;
+    }
+    
+    @Getter
+    @Setter
+    public static class Pool {
+        private int size = 10;
+    }
+}-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/infrastructure/exception/GlobalExceptionHandler.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.infrastructure.exception;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import java.time.Instant;
+import java.util.Map;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 12-12-2025 at 13:26:24
+ * File: GlobalExceptionHandler.java
+ */
+
+@Slf4j
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<Map<String, Object>> handleRuntimeException(RuntimeException ex) {
+        log.error("Runtime exception occurred", ex);
+        
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of(
+                    "timestamp", Instant.now().toString(),
+                    "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                    "error", "Internal Server Error",
+                    "message", ex.getMessage() != null ? ex.getMessage() : "An unexpected error occurred"
+                ));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgumentException(IllegalArgumentException ex) {
+        log.error("Illegal argument exception occurred", ex);
+        
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(Map.of(
+                    "timestamp", Instant.now().toString(),
+                    "status", HttpStatus.BAD_REQUEST.value(),
+                    "error", "Bad Request",
+                    "message", ex.getMessage() != null ? ex.getMessage() : "Invalid request parameters"
+                ));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, Object>> handleGenericException(Exception ex) {
+        log.error("Unexpected exception occurred", ex);
+        
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of(
+                    "timestamp", Instant.now().toString(),
+                    "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                    "error", "Internal Server Error",
+                    "message", "An unexpected error occurred"
+                ));
+    }
+}
+-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/infrastructure/sftp/SftpSessionFactoryConfig.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing.infrastructure.sftp;
+
+import lombok.RequiredArgsConstructor;
+import org.apache.sshd.sftp.client.SftpClient;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.integration.file.remote.session.CachingSessionFactory;
+import org.springframework.integration.file.remote.session.SessionFactory;
+import org.springframework.integration.sftp.session.DefaultSftpSessionFactory;
+import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
+import com.indra.minsait.dvsmart.indexing.infrastructure.config.SftpConfigProperties;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 12-12-2025 at 13:05:17
+ * File: SftpSessionFactoryConfig.java
+ */
+
+@Configuration
+@RequiredArgsConstructor
+public class SftpSessionFactoryConfig {
+
+    private final SftpConfigProperties props;
+
+    @Bean(name = "sftpOriginSessionFactory")
+    SessionFactory<SftpClient.DirEntry> sftpOriginSessionFactory() {
+        DefaultSftpSessionFactory factory = new DefaultSftpSessionFactory(true);
+        factory.setHost(props.getOrigin().getHost());
+        factory.setPort(props.getOrigin().getPort());
+        factory.setUser(props.getOrigin().getUser());
+        factory.setPassword(props.getOrigin().getPassword());
+        factory.setTimeout(props.getOrigin().getTimeout());
+        factory.setAllowUnknownKeys(true);
+
+        CachingSessionFactory<SftpClient.DirEntry> cachingFactory = new CachingSessionFactory<>(factory);
+        cachingFactory.setPoolSize(props.getOrigin().getPool().getSize());
+
+        return cachingFactory;
+    }
+
+    @Bean(name = "sftpOriginTemplate")
+    SftpRemoteFileTemplate sftpOriginTemplate() {
+        return new SftpRemoteFileTemplate(sftpOriginSessionFactory());
+    }
+
+}-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/java/com/indra/minsait/dvsmart/indexing/ServiceApplication.java
+════════════════════════════════════════════════
+/*
+ * /////////////////////////////////////////////////////////////////////////////
+ *
+ * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * http://www.indracompany.com/
+ *
+ * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
+ * This file can only be copied, distributed and used all or in part with the
+ * written permission of Indra Sistemas, S.A, or in accordance with the terms and
+ * conditions laid down in the agreement / contract under which supplied.
+ *
+ * /////////////////////////////////////////////////////////////////////////////
+ */
+package com.indra.minsait.dvsmart.indexing;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
+
+/**
+ * Author: hahuaranga@indracompany.com
+ * Created on: 11-12-2025 at 17:07:25
+ * File: ServiceApplication.java
+ */
+
+@SpringBootApplication
+@ConfigurationPropertiesScan
+public class ServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ServiceApplication.class, args);
+    }
+}
+-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./src/main/resources/application.properties
+════════════════════════════════════════════════
+# ============================================================================
+# APPLICATION CONFIGURATION
+# ============================================================================
+spring.application.name=dvsmart-indexing-api
+server.servlet.context-path=/dvsmart_indexing_api
+server.port=8080
+
+# ============================================================================
+# MONGODB CONFIGURATION
+# ============================================================================
+spring.mongodb.uri=mongodb://localhost:27017/dvsmart_reorganization
+
+# ============================================================================
+# SPRING BATCH CONFIGURATION
+# ============================================================================
+# Deshabilitar inicio automatico de jobs al arrancar la aplicacion
+spring.batch.job.enabled=false
+
+# ============================================================================
+# BATCH CUSTOM PROPERTIES (BatchConfigProperties)
+# ============================================================================
+# Tamaño del chunk para procesamiento por lotes
+# Cada chunk procesa este numero de registros antes de commit
+batch.chunk-size=100
+
+# Limite de concurrencia (deprecado, usar thread-pool-size)
+batch.concurrency-limit=10
+
+# Tamaño del pool de threads para procesamiento asincrono
+# Mas threads = mas procesamiento paralelo (balance con recursos del servidor)
+batch.thread-pool-size=20
+
+# Capacidad de la cola de tareas pendientes
+# Si hay mas tareas que threads, se encolan aqui
+batch.queue-capacity=1000
+
+# ============================================================================
+# SFTP ORIGIN CONFIGURATION (SftpConfigProperties.Origin)
+# ============================================================================
+# Servidor SFTP de origen (donde estan los archivos actuales)
+sftp.origin.host=sftp-origin.example.com
+sftp.origin.port=22
+sftp.origin.user=origin_user
+sftp.origin.password=origin_password
+
+# Directorio base en el servidor origen
+sftp.origin.base-dir=/data/legacy/files
+
+# Timeout de conexion en milisegundos (30 segundos)
+sftp.origin.timeout=30000
+
+# Tamaño del pool de conexiones SFTP origen
+# Mas conexiones = mas operaciones simultaneas de lectura
+sftp.origin.pool.size=10
+
+# ============================================================================
+# LOGGING CONFIGURATION
+# ============================================================================
+# Nivel de log general
+logging.level.root=INFO
+
+# Logs de la aplicacion (ajustar segun necesidad)
+logging.level.com.indra.minsait.dvsmart.reorganization=DEBUG
+
+# Logs de Spring Batch (INFO para produccion, DEBUG para desarrollo)
+logging.level.org.springframework.batch=INFO
+
+# Logs de Spring Integration SFTP (DEBUG para troubleshooting)
+logging.level.org.springframework.integration.sftp=DEBUG
+
+# Logs de MongoDB
+logging.level.org.springframework.data.mongodb=INFO
+
+# Patron de log para consola
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n
+
+# Patron de log para archivo
+logging.pattern.file=%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n
+
+# Configuracion de archivo de log
+logging.file.name=logs/reorganization.log
+logging.file.max-size=10MB
+logging.file.max-history=30
+logging.file.total-size-cap=500MB
+
+# ============================================================================
+# ACTUATOR CONFIGURATION (Monitoring & Health)
+# ============================================================================
+# Exponer endpoints de actuator
+management.endpoints.web.exposure.include=health,info,metrics,batch
+
+# Mostrar detalles del health check
+management.endpoint.health.show-details=always
+
+# Habilitar metricas de JVM, proceso y sistema
+management.metrics.enable.jvm=true
+management.metrics.enable.process=true
+management.metrics.enable.system=true-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./target/classes/application.properties
+════════════════════════════════════════════════
+# ============================================================================
+# APPLICATION CONFIGURATION
+# ============================================================================
+spring.application.name=dvsmart-indexing-api
+server.servlet.context-path=/dvsmart_indexing_api
+server.port=8080
+
+# ============================================================================
+# MONGODB CONFIGURATION
+# ============================================================================
+spring.mongodb.uri=mongodb://localhost:27017/dvsmart_reorganization
+
+# ============================================================================
+# SPRING BATCH CONFIGURATION
+# ============================================================================
+# Deshabilitar inicio automatico de jobs al arrancar la aplicacion
+spring.batch.job.enabled=false
+
+# ============================================================================
+# BATCH CUSTOM PROPERTIES (BatchConfigProperties)
+# ============================================================================
+# Tamaño del chunk para procesamiento por lotes
+# Cada chunk procesa este numero de registros antes de commit
+batch.chunk-size=100
+
+# Limite de concurrencia (deprecado, usar thread-pool-size)
+batch.concurrency-limit=10
+
+# Tamaño del pool de threads para procesamiento asincrono
+# Mas threads = mas procesamiento paralelo (balance con recursos del servidor)
+batch.thread-pool-size=20
+
+# Capacidad de la cola de tareas pendientes
+# Si hay mas tareas que threads, se encolan aqui
+batch.queue-capacity=1000
+
+# ============================================================================
+# SFTP ORIGIN CONFIGURATION (SftpConfigProperties.Origin)
+# ============================================================================
+# Servidor SFTP de origen (donde estan los archivos actuales)
+sftp.origin.host=sftp-origin.example.com
+sftp.origin.port=22
+sftp.origin.user=origin_user
+sftp.origin.password=origin_password
+
+# Directorio base en el servidor origen
+sftp.origin.base-dir=/data/legacy/files
+
+# Timeout de conexion en milisegundos (30 segundos)
+sftp.origin.timeout=30000
+
+# Tamaño del pool de conexiones SFTP origen
+# Mas conexiones = mas operaciones simultaneas de lectura
+sftp.origin.pool.size=10
+
+# ============================================================================
+# LOGGING CONFIGURATION
+# ============================================================================
+# Nivel de log general
+logging.level.root=INFO
+
+# Logs de la aplicacion (ajustar segun necesidad)
+logging.level.com.indra.minsait.dvsmart.reorganization=DEBUG
+
+# Logs de Spring Batch (INFO para produccion, DEBUG para desarrollo)
+logging.level.org.springframework.batch=INFO
+
+# Logs de Spring Integration SFTP (DEBUG para troubleshooting)
+logging.level.org.springframework.integration.sftp=DEBUG
+
+# Logs de MongoDB
+logging.level.org.springframework.data.mongodb=INFO
+
+# Patron de log para consola
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n
+
+# Patron de log para archivo
+logging.pattern.file=%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n
+
+# Configuracion de archivo de log
+logging.file.name=logs/reorganization.log
+logging.file.max-size=10MB
+logging.file.max-history=30
+logging.file.total-size-cap=500MB
+
+# ============================================================================
+# ACTUATOR CONFIGURATION (Monitoring & Health)
+# ============================================================================
+# Exponer endpoints de actuator
+management.endpoints.web.exposure.include=health,info,metrics,batch
+
+# Mostrar detalles del health check
+management.endpoint.health.show-details=always
+
+# Habilitar metricas de JVM, proceso y sistema
+management.metrics.enable.jvm=true
+management.metrics.enable.process=true
+management.metrics.enable.system=true-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./target/classes/META-INF/maven/com.indra.minsait.dvsmart.indexing/dvsmart_indexing_api/pom.properties
+════════════════════════════════════════════════
+#Generated by Maven Integration for Eclipse
+#Wed Dec 17 21:22:08 CLST 2025
+artifactId=dvsmart_indexing_api
+groupId=com.indra.minsait.dvsmart.indexing
+m2e.projectLocation=D\:\\WORKSPACES\\workspace_eclipse_new_latest\\dvsmart_indexing_api
+m2e.projectName=dvsmart_indexing_api
+version=1.0.0-SNAPSHOT
+-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./target/classes/META-INF/maven/com.indra.minsait.dvsmart.indexing/dvsmart_indexing_api/pom.xml
+════════════════════════════════════════════════
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>4.0.0</version>
+	</parent>
+	<groupId>com.indra.minsait.dvsmart.indexing</groupId>
+	<artifactId>dvsmart_indexing_api</artifactId>
+	<version>1.0.0-SNAPSHOT</version>
+	<name>dvsmart_indexing_api</name>
+
+	<properties>
+		<java.version>21</java.version>
+		<maven.compiler.source>21</maven.compiler.source>
+		<maven.compiler.target>21</maven.compiler.target>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+		<license.maven.plugin.version>5.0.0</license.maven.plugin.version>
+		<maven.build.timestamp.format>yyyy</maven.build.timestamp.format>
+
+		<spring-batch.version>6.0.0</spring-batch.version>
+		<spring-integration.version>7.0.0</spring-integration.version>
+
+		<!-- Other dependencies -->
+		<lombok.version>1.18.30</lombok.version>
+		<sshj.version>0.38.0</sshj.version>
+	</properties>
+
+	<dependencies>
+		<!-- Spring Boot Starters -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-web</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-mongodb</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+
+		<!-- Spring Batch -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-batch</artifactId>
+		</dependency>
+
+		<!-- Spring Integration Core -->
+		<dependency>
+			<groupId>org.springframework.integration</groupId>
+			<artifactId>spring-integration-core</artifactId>
+		</dependency>
+
+		<!-- Spring Integration SFTP (SSHJ) -->
+		<dependency>
+			<groupId>org.springframework.integration</groupId>
+			<artifactId>spring-integration-sftp</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.batch</groupId>
+			<artifactId>spring-batch-integration</artifactId>
+		</dependency>
+
+		<!-- SSHJ for SFTP -->
+		<dependency>
+			<groupId>com.hierynomus</groupId>
+			<artifactId>sshj</artifactId>
+			<version>${sshj.version}</version>
+		</dependency>
+
+		<!-- Lombok -->
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<scope>provided</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-devtools</artifactId>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+
+		<!-- Spring Boot Configuration Processor -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-configuration-processor</artifactId>
+			<optional>true</optional>
+		</dependency>
+
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+
+		<!-- Testing -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.batch</groupId>
+			<artifactId>spring-batch-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.integration</groupId>
+			<artifactId>spring-integration-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<finalName>${project.artifactId}</finalName>
+		<plugins>
+
+			<!-- Maven Compiler Plugin -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<source>${java.version}</source>
+					<target>${java.version}</target>
+					<encoding>${project.build.sourceEncoding}</encoding>
+					<annotationProcessorPaths>
+						<path>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+							<version>${lombok.version}</version>
+						</path>
+						<path>
+							<groupId>org.springframework.boot</groupId>
+							<artifactId>spring-boot-configuration-processor</artifactId>
+							<version>4.0.0</version>
+						</path>
+					</annotationProcessorPaths>
+				</configuration>
+			</plugin>
+
+			<!-- Spring Boot Maven Plugin -->
+			<plugin>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<excludes>
+						<exclude>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+						</exclude>
+					</excludes>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>repackage</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- CopyRight Plugin -->
+			<plugin>
+				<groupId>com.mycila</groupId>
+				<artifactId>license-maven-plugin</artifactId>
+				<version>${license.maven.plugin.version}</version>
+				<configuration>
+					<!-- Ruta del banner -->
+					<header>src/main/resources/license-header.txt</header>
+
+					<!-- Aplicar solo a archivos donde corresponde -->
+					<includes>
+						<include>**/*.java</include>
+					</includes>
+
+					<!-- Evitar modificar código generado o configuraciones -->
+					<excludes>
+						<exclude>**/target/**</exclude>
+						<exclude>**/generated/**</exclude>
+					</excludes>
+
+					<!-- Variables dinámicas -->
+					<properties>
+						<year>${maven.build.timestamp}</year>
+					</properties>
+
+					<!-- Etiquetas conocidas para insertar correctamente el
+					header -->
+					<mapping>
+						<java>SLASHSTAR_STYLE</java>
+					</mapping>
+
+					<!-- Configuraciones adicionales importantes -->
+					<strictCheck>true</strictCheck>
+					<useDefaultExcludes>true</useDefaultExcludes>
+				</configuration>
+
+				<executions>
+					<!-- Ejecuta el format en la fase process-sources (antes de
+					compile) -->
+					<execution>
+						<id>apply-license-headers</id>
+						<phase>process-sources</phase>
+						<goals>
+							<goal>format</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- Maven Surefire Plugin (para tests) -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<!--				<version>3.0.0</version>-->
+				<configuration>
+					<includes>
+						<include>**/*Test.java</include>
+						<include>**/*Tests.java</include>
+					</includes>
+				</configuration>
+			</plugin>
+
+			<!-- Maven Resources Plugin -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<!--				<version>3.3.1</version>-->
+				<configuration>
+					<encoding>${project.build.sourceEncoding}</encoding>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+
+	<!-- Profiles -->
+	<profiles>
+		<!-- Development Profile -->
+		<profile>
+			<id>dev</id>
+			<activation>
+				<activeByDefault>true</activeByDefault>
+			</activation>
+			<properties>
+				<spring.profiles.active>dev</spring.profiles.active>
+			</properties>
+		</profile>
+
+		<!-- Production Profile -->
+		<profile>
+			<id>prod</id>
+			<properties>
+				<spring.profiles.active>prod</spring.profiles.active>
+			</properties>
+		</profile>
+	</profiles>
+
+</project>-e /n/n
+════════════════════════════════════════════════
+ARCHIVO: ./target/maven-archiver/pom.properties
+════════════════════════════════════════════════
+artifactId=dvsmart_indexing_api
+groupId=com.indra.minsait.dvsmart.indexing
+version=1.0.0-SNAPSHOT
+-e /n/n

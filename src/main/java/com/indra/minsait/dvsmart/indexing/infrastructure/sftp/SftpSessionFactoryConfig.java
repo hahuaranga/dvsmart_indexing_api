@@ -43,7 +43,7 @@ public class SftpSessionFactoryConfig {
         factory.setUser(props.getOrigin().getUser());
         factory.setPassword(props.getOrigin().getPassword());
         factory.setTimeout(props.getOrigin().getTimeout());
-        factory.setAllowUnknownKeys(true);
+        factory.setAllowUnknownKeys(true);     
 
         CachingSessionFactory<SftpClient.DirEntry> cachingFactory = new CachingSessionFactory<>(factory);
         cachingFactory.setPoolSize(props.getOrigin().getPool().getSize());
