@@ -136,7 +136,14 @@
 			<groupId>net.javacrumbs.shedlock</groupId>
 			<artifactId>shedlock-provider-mongo</artifactId>
 			<version>${shedlock.version}</version>
-		</dependency>		
+		</dependency>
+		
+		<!-- Apache Commons Pool para gestión de pool lazy -->
+		<dependency>
+		    <groupId>org.apache.commons</groupId>
+		    <artifactId>commons-pool2</artifactId>
+		</dependency>				
+
 	</dependencies>
 
 	<build>

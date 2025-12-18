@@ -48,6 +48,20 @@ import java.util.concurrent.Future;
  * File: BatchReorgFullConfig.java
  */
 
+/**
+ * Configuración del Job de Indexación Completa.
+ * 
+ * Flujo:
+ * 1. Pre-procesamiento: Descubrir todos los directorios (una sola sesión SFTP)
+ * 2. Reader: Lee archivos directorio por directorio (usa pool lazy)
+ * 3. Processor: Extrae metadata de cada archivo (paralelo, sin SFTP)
+ * 4. Writer: Bulk upsert a MongoDB (paralelo, sin SFTP)
+ * 
+ * Ventajas del pool lazy:
+ * - Reader usa pocas conexiones (1-2 típicamente)
+ * - Conexiones se liberan automáticamente al terminar
+ * - No hay conexiones idle consumiendo recursos
+ */
 @Slf4j
 @Configuration
 @RequiredArgsConstructor
@@ -60,7 +74,6 @@ public class BatchIndexFullConfig {
     private final SftpConfigProperties sftpProps;
     private final MetadataExtractorProcessor metadataExtractorProcessor;
     
-    // ✅ Inyectar template directamente (más limpio)
     @Qualifier("sftpOriginTemplate")
     private final SftpRemoteFileTemplate sftpTemplate;
 
@@ -69,6 +82,10 @@ public class BatchIndexFullConfig {
         return new MapJobRegistry();
     }
 
+    /**
+     * TaskExecutor para procesamiento asíncrono.
+     * Solo para processor y writer (sin SFTP).
+     */
     @Bean(name = "indexingTaskExecutor")
     TaskExecutor indexingTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -84,29 +101,53 @@ public class BatchIndexFullConfig {
 
     /**
      * Pre-procesamiento: Descubrir todos los directorios.
-     * Usa template para manejo seguro de sesiones.
+     * 
+     * Ventajas con pool lazy:
+     * - Usa 1 sola sesión SFTP para todo el descubrimiento
+     * - Template adquiere y libera sesión automáticamente
+     * - Sesión se devuelve al pool al terminar
      */
     private Queue<String> discoverDirectoriesBeforeJob() {
+        log.info("========================================");
         log.info("Starting directory discovery phase...");
+        log.info("========================================");
         
-        // ✅ Template maneja la sesión automáticamente
-        return directoryDiscoveryService.discoverDirectories(
+        long start = System.currentTimeMillis();
+        
+        Queue<String> directories = directoryDiscoveryService.discoverDirectories(
             sftpTemplate,
             sftpProps.getOrigin().getBaseDir()
         );
+        
+        long duration = System.currentTimeMillis() - start;
+        
+        log.info("========================================");
+        log.info("Directory discovery completed");
+        log.info("Total directories: {}", directories.size());
+        log.info("Duration: {} ms", duration);
+        log.info("========================================");
+        
+        return directories;
     }
 
     /**
      * Reader que consume la queue de directorios.
+     * 
+     * Usa pool lazy:
+     * - Adquiere sesión solo cuando lee archivos de un directorio
+     * - Libera sesión al terminar cada directorio
+     * - Típicamente usa 1-2 conexiones concurrentes
      */
     @Bean
     ItemReader<SftpFileEntry> directoryQueueReader() {
         Queue<String> directoryQueue = discoverDirectoriesBeforeJob();
-        
-        // ✅ Pasar template al reader (no SessionFactory)
         return new DirectoryQueueItemReader(sftpTemplate, directoryQueue);
     }
 
+    /**
+     * Processor asíncrono para extracción de metadata.
+     * No usa SFTP, solo procesa datos en memoria.
+     */
     @Bean
     AsyncItemProcessor<SftpFileEntry, ArchivoMetadata> asyncMetadataProcessor() {
         AsyncItemProcessor<SftpFileEntry, ArchivoMetadata> asyncProcessor = 
@@ -115,11 +156,23 @@ public class BatchIndexFullConfig {
         return asyncProcessor;
     }
 
+    /**
+     * Writer asíncrono para MongoDB.
+     * No usa SFTP, solo escribe a MongoDB.
+     */
     @Bean
     AsyncItemWriter<ArchivoMetadata> asyncBulkWriter() {
         return new AsyncItemWriter<>(bulkWriter);
     }
 
+    /**
+     * Step principal de indexación.
+     * 
+     * Chunk size: 500 (balance entre throughput y memoria)
+     * - Reader: Secuencial, 1-2 conexiones SFTP
+     * - Processor: Paralelo, sin SFTP
+     * - Writer: Paralelo, sin SFTP
+     */
     @Bean
     Step indexingStep() {
         return new StepBuilder("indexingStep", jobRepository)
@@ -130,6 +183,10 @@ public class BatchIndexFullConfig {
                 .build();
     }
 
+    /**
+     * Job de indexación completa.
+     * Coordinado con ShedLock para evitar ejecuciones concurrentes.
+     */
     @Bean(name = "batchIndexFullJob")
     Job batchIndexFullJob() {
         return new JobBuilder("BATCH-INDEX-FULL", jobRepository)

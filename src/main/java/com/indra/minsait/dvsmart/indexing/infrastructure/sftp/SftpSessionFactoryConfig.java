@@ -13,15 +13,16 @@
  */
 package com.indra.minsait.dvsmart.indexing.infrastructure.sftp;
 
+import com.indra.minsait.dvsmart.indexing.infrastructure.config.SftpConfigProperties;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.sshd.sftp.client.SftpClient;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.integration.file.remote.session.CachingSessionFactory;
 import org.springframework.integration.file.remote.session.SessionFactory;
 import org.springframework.integration.sftp.session.DefaultSftpSessionFactory;
 import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
-import com.indra.minsait.dvsmart.indexing.infrastructure.config.SftpConfigProperties;
+import jakarta.annotation.PreDestroy;
 
 /**
  * Author: hahuaranga@indracompany.com
@@ -29,31 +30,93 @@ import com.indra.minsait.dvsmart.indexing.infrastructure.config.SftpConfigProper
  * File: SftpSessionFactoryConfig.java
  */
 
+/**
+ * Configuración de SessionFactory con pool lazy y validación.
+ */
+@Slf4j
 @Configuration
 @RequiredArgsConstructor
 public class SftpSessionFactoryConfig {
 
     private final SftpConfigProperties props;
+    private CustomLazySftpSessionFactory lazyPoolFactory;
 
-    @Bean(name = "sftpOriginSessionFactory")
-    SessionFactory<SftpClient.DirEntry> sftpOriginSessionFactory() {
+    /**
+     * Factory base (sin pool) que crea conexiones SFTP individuales.
+     */
+    private SessionFactory<SftpClient.DirEntry> createBaseSessionFactory() {
         DefaultSftpSessionFactory factory = new DefaultSftpSessionFactory(true);
         factory.setHost(props.getOrigin().getHost());
         factory.setPort(props.getOrigin().getPort());
         factory.setUser(props.getOrigin().getUser());
         factory.setPassword(props.getOrigin().getPassword());
         factory.setTimeout(props.getOrigin().getTimeout());
-        factory.setAllowUnknownKeys(true);     
-
-        CachingSessionFactory<SftpClient.DirEntry> cachingFactory = new CachingSessionFactory<>(factory);
-        cachingFactory.setPoolSize(props.getOrigin().getPool().getSize());
-
-        return cachingFactory;
+        factory.setAllowUnknownKeys(true);
+        
+        log.info("Base SFTP SessionFactory configured for {}:{}",
+                props.getOrigin().getHost(),
+                props.getOrigin().getPort());
+        
+        return factory;
     }
 
+    /**
+     * SessionFactory con pool lazy personalizado.
+     * 
+     * Ventajas:
+     * - Conexiones creadas bajo demanda
+     * - Validación pre-uso automática
+     * - Eviction de conexiones inactivas
+     * - Coordinación con otras APIs vía uso responsable
+     */
+    @Bean(name = "sftpOriginSessionFactory")
+    SessionFactory<SftpClient.DirEntry> sftpOriginSessionFactory() {
+        
+        SessionFactory<SftpClient.DirEntry> baseFactory = createBaseSessionFactory();
+        
+        SftpConfigProperties.Pool poolConfig = props.getOrigin().getPool();
+        
+        lazyPoolFactory = new CustomLazySftpSessionFactory(
+            baseFactory,
+            poolConfig.getMaxSize(),
+            poolConfig.getInitialSize(),
+            poolConfig.getMaxWaitMillis(),
+            poolConfig.isTestOnBorrow(),
+            poolConfig.getTimeBetweenEvictionRunsMillis(),
+            poolConfig.getMinEvictableIdleTimeMillis()
+        );
+        
+        log.info("Lazy SFTP Session Pool initialized with max size: {}", poolConfig.getMaxSize());
+        
+        return lazyPoolFactory;
+    }
+
+    /**
+     * Template para operaciones SFTP de alto nivel.
+     */
     @Bean(name = "sftpOriginTemplate")
     SftpRemoteFileTemplate sftpOriginTemplate() {
-        return new SftpRemoteFileTemplate(sftpOriginSessionFactory());
+        SftpRemoteFileTemplate template = new SftpRemoteFileTemplate(sftpOriginSessionFactory());
+        log.info("SFTP RemoteFileTemplate configured");
+        return template;
     }
 
+    /**
+     * Monitor del pool como bean independiente.
+     */
+    @Bean
+    SftpPoolMonitor sftpPoolMonitor() {
+        return new SftpPoolMonitor(lazyPoolFactory);
+    }
+
+    /**
+     * Limpieza al apagar la aplicación.
+     */
+    @PreDestroy
+    public void cleanup() {
+        if (lazyPoolFactory != null) {
+            log.info("Shutting down SFTP session pool...");
+            lazyPoolFactory.destroy();
+        }
+    }
 }

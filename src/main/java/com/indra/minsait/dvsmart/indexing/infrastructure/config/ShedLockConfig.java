@@ -17,9 +17,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.core.LockProvider;
 import net.javacrumbs.shedlock.provider.mongo.MongoLockProvider;
+import net.javacrumbs.shedlock.spring.annotation.EnableSchedulerLock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Author: hahuaranga@indracompany.com
@@ -27,15 +29,46 @@ import org.springframework.data.mongodb.core.MongoTemplate;
  * File: ShedLockConfig.java
  */
 
+/**
+ * Configuración de ShedLock para coordinación distribuida.
+ * 
+ * Propósito:
+ * - Evitar ejecuciones concurrentes del mismo job
+ * - Coordinar entre dvsmart_indexing_api y dvsmart_reorganization_api
+ * - Prevenir saturación del servidor SFTP origen
+ * 
+ * Funcionamiento:
+ * - Usa MongoDB como backend de locks
+ * - Lock automático al ejecutar métodos anotados con @SchedulerLock
+ * - Si otro proceso tiene el lock, espera o falla según configuración
+ */
 @Slf4j
 @Configuration
+@EnableScheduling
+@EnableSchedulerLock(defaultLockAtMostFor = "PT2H", defaultLockAtLeastFor = "PT30M")
 @RequiredArgsConstructor
 public class ShedLockConfig {
 
-    private final MongoTemplate mongoTemplate;
-
+	private final MongoTemplate mongoTemplate;
+	
+    /**
+     * Provider de locks usando MongoDB.
+     * 
+     * Comparte la misma colección con dvsmart_reorganization_api
+     * para coordinación efectiva.
+     */
     @Bean
     LockProvider lockProvider() {
-        return new MongoLockProvider(mongoTemplate.getDb());
+        
+        log.info("Configuring ShedLock with MongoDB provider");
+        
+        // Usar colección específica para locks
+        // IMPORTANTE: Debe ser la misma que use dvsmart_reorganization_api
+        LockProvider provider = new MongoLockProvider(mongoTemplate.getDb()
+        );
+        
+        log.info("ShedLock provider configured successfully");
+        
+        return provider;
     }
 }

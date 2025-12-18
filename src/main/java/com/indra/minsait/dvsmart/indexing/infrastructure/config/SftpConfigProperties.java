@@ -38,13 +38,28 @@ public class SftpConfigProperties {
         private String user;
         private String password;
         private String baseDir;
-        private Pool pool = new Pool();
         private int timeout = 30000;
+        private Pool pool = new Pool();
     }
     
     @Getter
     @Setter
     public static class Pool {
+        // Tamaño del pool
         private int size = 10;
+        private int maxSize = 10;
+        private int initialSize = 0;
+        
+        // Configuración lazy
+        private boolean lazyInit = true;
+        
+        // Timeouts y validación
+        private long maxWaitMillis = 30000;
+        private boolean testOnBorrow = true;
+        private boolean testWhileIdle = true;
+        
+        // Eviction (limpieza de conexiones inactivas)
+        private long timeBetweenEvictionRunsMillis = 60000;
+        private long minEvictableIdleTimeMillis = 300000; // 5 minutos
     }
 }
