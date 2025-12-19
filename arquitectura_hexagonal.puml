@@ -1,0 +1,37 @@
+@startuml
+skinparam componentStyle rectangle
+
+package "Dominio" {
+    [ArchivoMetadata] as M
+    [FileMetadataService] as S
+    [DirectoryDiscoveryService] as D
+}
+
+package "Puertos Entrada" {
+    [StartIndexFullUseCase] as PI
+}
+
+package "Adaptadores Entrada" {
+    [BatchIndexingController] as AI1
+    [MonitoringController] as AI2
+}
+
+package "Adaptadores Salida" {
+    [DirectoryQueueItemReader] as AO1
+    [MetadataExtractorProcessor] as AO2
+    [BulkUpsertMongoItemWriter] as AO3
+    [CustomLazySftpSessionFactory] as AO4
+}
+
+database "MongoDB" as DB
+
+' Relaciones
+AI1 --> PI
+AI2 --> PI
+PI --> S
+S --> M
+AO1 --> D
+AO1 --> AO4
+AO3 --> DB
+
+@enduml

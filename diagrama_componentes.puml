@@ -1,0 +1,52 @@
+@startuml
+skinparam componentStyle rectangle
+
+package "Cliente" {
+    [REST Controller] as API
+}
+
+package "Capa de Aplicación" {
+    [StartIndexFullUseCase] as UC
+    [StartIndexFullService] as SVC
+}
+
+package "Spring Batch Job" {
+    [BatchIndexFullJob] as JOB
+    [IndexingStep] as STEP
+    
+    package "Pipeline Asíncrono" {
+        [DirectoryQueueItemReader] as READER
+        [MetadataExtractorProcessor] as PROCESSOR
+        [BulkUpsertMongoItemWriter] as WRITER
+    }
+}
+
+package "Infraestructura" {
+    [CustomLazySftpSessionFactory] as POOL
+    [SftpPoolMonitor] as MONITOR
+    [ShedLock MongoDB Provider] as SHEDLOCK
+}
+
+package "Sistemas Externos" {
+    [Servidor SFTP Origen] as SFTP
+    database "MongoDB" as MONGO
+}
+
+' Relaciones de flujo principal
+API --> UC : "POST /api/batch/index/full"
+UC --> SVC
+SVC --> JOB : "Lanza con lock"
+JOB --> STEP
+STEP --> READER
+READER --> PROCESSOR : "Lee archivos"
+PROCESSOR --> WRITER : "Extrae metadata"
+WRITER --> MONGO : "Bulk upsert"
+
+' Relaciones de infraestructura (líneas punteadas)
+READER ..> POOL : "Adquiere sesión"
+POOL ..> SFTP : "Conexión SSH"
+MONITOR ..> POOL : "Monitorea"
+SVC ..> SHEDLOCK : "Obtiene lock"
+SHEDLOCK ..> MONGO : "Persiste locks"
+
+@enduml
