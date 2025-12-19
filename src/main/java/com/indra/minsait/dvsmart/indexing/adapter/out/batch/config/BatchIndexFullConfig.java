@@ -141,7 +141,8 @@ public class BatchIndexFullConfig {
     @Bean
     ItemReader<SftpFileEntry> directoryQueueReader() {
         Queue<String> directoryQueue = discoverDirectoriesBeforeJob();
-        return new DirectoryQueueItemReader(sftpTemplate, directoryQueue);
+        //return new DirectoryQueueItemReader(sftpTemplate, directoryQueue);
+        return new DirectoryQueueItemReader(sftpTemplate, directoryDiscoveryService, directoryQueue.element());
     }
 
     /**
