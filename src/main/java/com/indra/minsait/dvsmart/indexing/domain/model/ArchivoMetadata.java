@@ -23,11 +23,19 @@ import java.time.Instant;
 @Data
 @Builder
 public class ArchivoMetadata {
-    private String idUnico;           // Hash del path completo
-    private String rutaOrigen;        // Path completo en SFTP
-    private String nombre;            // Nombre del archivo
-    private Instant mtime;            // Fecha de modificación
-    private Long tamanio;             // Tamaño en bytes
-    private String extension;         // Extensión del archivo
-    private Instant indexadoEn;       // Timestamp de indexación
+    
+    // Identificación
+    private String idUnico;
+    
+    // Metadata del archivo
+    private String sourcePath;           // ✅ CAMBIO: antes rutaOrigen
+    private String fileName;             // ✅ CAMBIO: antes nombre
+    private String extension;
+    private Long fileSize;               // ✅ CAMBIO: antes tamanio
+    private Instant lastModificationDate; // ✅ CAMBIO: antes mtime
+    
+    // Control de indexación
+    private String indexing_status;      // ✅ NUEVO
+    private Instant indexing_indexedAt;  // ✅ NUEVO
+    private String indexing_errorDescription;  // ✅ CAMBIO: Agregar campo
 }

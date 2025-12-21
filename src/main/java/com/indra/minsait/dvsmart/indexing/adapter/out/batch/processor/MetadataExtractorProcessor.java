@@ -18,6 +18,9 @@ import com.indra.minsait.dvsmart.indexing.domain.model.SftpFileEntry;
 import com.indra.minsait.dvsmart.indexing.domain.service.FileMetadataService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import java.time.Instant;
+
 import org.springframework.batch.infrastructure.item.ItemProcessor;
 import org.springframework.stereotype.Component;
 
@@ -55,7 +58,7 @@ public class MetadataExtractorProcessor implements ItemProcessor<SftpFileEntry, 
             return null;
         }
         
-        // Filtro 2: Skip directorios (no deberían llegar, pero por seguridad)
+        // Filtro 2: Skip directorios
         if (entry.isDirectory()) {
             log.trace("Skipping directory: {}", entry.getFullPath());
             return null;
@@ -80,7 +83,7 @@ public class MetadataExtractorProcessor implements ItemProcessor<SftpFileEntry, 
             return null;
         }
         
-        // Extracción de metadata (lógica de dominio)
+        // ✅ NUEVO: Capturar errores y retornar metadata con estado FAILED
         try {
             ArchivoMetadata metadata = metadataService.toMetadata(entry);
             log.trace("Processed: {} → {}", entry.getFullPath(), metadata.getIdUnico());
@@ -88,9 +91,62 @@ public class MetadataExtractorProcessor implements ItemProcessor<SftpFileEntry, 
             
         } catch (Exception e) {
             log.error("Error processing file: {}", entry.getFullPath(), e);
-            // Opción A: Retornar null (skip)
-            // Opción B: Re-lanzar excepción (fail y retry)
-            throw e;  // Fail-fast para errores inesperados
+            
+            // ✅ CAMBIO: En lugar de lanzar excepción, retornar metadata con error
+            return createFailedMetadata(entry, e);
+        }
+    }
+
+    /**
+     * ✅ NUEVO: Crea metadata con estado FAILED cuando hay error
+     */
+    private ArchivoMetadata createFailedMetadata(SftpFileEntry entry, Exception error) {
+        
+        String idUnico;
+        try {
+            idUnico = metadataService.generateIdUnico(entry.getFullPath());
+        } catch (Exception e) {
+            // Fallback: usar hash simple del path
+            idUnico = String.valueOf(entry.getFullPath().hashCode());
+        }
+        
+        String errorMessage = String.format("%s: %s", 
+            error.getClass().getSimpleName(), 
+            error.getMessage() != null ? error.getMessage() : "Unknown error"
+        );
+        
+        // Truncar mensaje si es muy largo
+        if (errorMessage.length() > 500) {
+            errorMessage = errorMessage.substring(0, 497) + "...";
+        }
+        
+        return ArchivoMetadata.builder()
+                .idUnico(idUnico)
+                .sourcePath(entry.getFullPath())
+                .fileName(entry.getFilename())
+                .extension(extractExtension(entry.getFilename()))
+                .fileSize(entry.getSize())
+                .lastModificationDate(Instant.ofEpochMilli(entry.getModificationTime()))
+                
+                // ✅ Estado FAILED
+                .indexing_status("FAILED")
+                .indexing_indexedAt(Instant.now())
+                .indexing_errorDescription(errorMessage)  // ✅ AQUÍ SE LLENA
+                .build();
+    }
+
+    /**
+     * ✅ NUEVO: Extrae extensión de forma segura
+     */
+    private String extractExtension(String filename) {
+        try {
+            if (filename == null || !filename.contains(".")) {
+                return "";
+            }
+            int lastDot = filename.lastIndexOf('.');
+            return filename.substring(lastDot + 1).toLowerCase();
+        } catch (Exception e) {
+            return "";
         }
     }
     

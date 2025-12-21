@@ -27,7 +27,7 @@ import org.springframework.stereotype.Service;
 /**
  * Author: hahuaranga@indracompany.com
  * Created on: 12-12-2025 at 12:54:15
- * File: StartReorganizeFullService.java
+ * File: StartIndexFullService.java
  */
 
 /**

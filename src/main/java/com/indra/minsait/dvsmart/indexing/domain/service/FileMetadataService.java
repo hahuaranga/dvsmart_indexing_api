@@ -37,23 +37,40 @@ import java.time.Instant;
 @Service
 public class FileMetadataService {
 
-    /**
-     * Convierte un SftpFileEntry a ArchivoMetadata con todos los campos calculados.
-     */
-    public ArchivoMetadata toMetadata(SftpFileEntry entry) {
-        String extension = extractExtension(entry.getFilename());
-        String idUnico = generateIdUnico(entry.getFullPath());
-        
-        return ArchivoMetadata.builder()
-                .idUnico(idUnico)
-                .rutaOrigen(entry.getFullPath())
-                .nombre(entry.getFilename())
-                .mtime(Instant.ofEpochMilli(entry.getModificationTime()))
-                .tamanio(entry.getSize())
-                .extension(extension)
-                .indexadoEn(Instant.now())
-                .build();
-    }
+	/**
+	 * Convierte un SftpFileEntry a ArchivoMetadata con todos los campos calculados.
+	 */
+	public ArchivoMetadata toMetadata(SftpFileEntry entry) {
+	    String extension = extractExtension(entry.getFilename());
+	    String idUnico = generateIdUnico(entry.getFullPath());
+	    
+	    try {
+			return ArchivoMetadata.builder()
+			        .idUnico(idUnico)
+			        .sourcePath(entry.getFullPath())              // ✅ CAMBIO
+			        .fileName(entry.getFilename())                // ✅ CAMBIO
+			        .extension(extension)
+			        .fileSize(entry.getSize())                    // ✅ CAMBIO
+			        .lastModificationDate(
+			            Instant.ofEpochMilli(entry.getModificationTime())  // ✅ CAMBIO
+			        )
+			        // ✅ NUEVO: Estado inicial de indexación
+			        .indexing_status("COMPLETED")                 // ✅ NUEVO
+			        .indexing_indexedAt(Instant.now())            // ✅ NUEVO
+			        .build();
+		} catch (Exception e) {
+	        // Retornar metadata con error
+	        return ArchivoMetadata.builder()
+	                .idUnico(String.valueOf(entry.getFullPath().hashCode()))
+	                .sourcePath(entry.getFullPath())
+	                .fileName(entry.getFilename())
+	                .fileSize(entry.getSize())
+	                .indexing_status("FAILED")
+	                .indexing_indexedAt(Instant.now())
+	                .indexing_errorDescription(e.getMessage())
+	                .build();
+		}
+	}
 
     /**
      * Genera un ID único basado en el path completo usando SHA-256.

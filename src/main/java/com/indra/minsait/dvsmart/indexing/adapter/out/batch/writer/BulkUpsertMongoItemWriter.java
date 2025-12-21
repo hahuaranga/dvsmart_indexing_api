@@ -50,30 +50,51 @@ import org.springframework.stereotype.Component;
 public class BulkUpsertMongoItemWriter implements ItemWriter<ArchivoMetadata> {
 
     private final MongoTemplate mongoTemplate;
-    private long totalInserted = 0;
-    private long totalUpdated = 0;
+    //private long totalInserted = 0;
+    //private long totalUpdated = 0;
 
     @Override
     public void write(Chunk<? extends ArchivoMetadata> chunk) {
         
         BulkOperations bulkOps = mongoTemplate.bulkOps(
-            BulkOperations.BulkMode.UNORDERED, // Continuar si hay errores
+            BulkOperations.BulkMode.UNORDERED,
             DisorganizedFilesIndexDocument.class
         );
+        
+        int successCount = 0;
+        int failedCount = 0;
         
         for (ArchivoMetadata metadata : chunk) {
             Query query = new Query(Criteria.where("idUnico").is(metadata.getIdUnico()));
             
             Update update = new Update()
-                    .set("rutaOrigen", metadata.getRutaOrigen())
-                    .set("nombre", metadata.getNombre())
-                    .set("mtime", metadata.getMtime())
-                    .set("tamanio", metadata.getTamanio())
+                    .set("sourcePath", metadata.getSourcePath())
+                    .set("fileName", metadata.getFileName())
                     .set("extension", metadata.getExtension())
-                    .set("indexadoEn", metadata.getIndexadoEn())
-                    .setOnInsert("idUnico", metadata.getIdUnico()); // Solo en insert
+                    .set("fileSize", metadata.getFileSize())
+                    .set("lastModificationDate", metadata.getLastModificationDate())
+                    
+                    // ✅ Control de indexación (con error)
+                    .set("indexing_status", metadata.getIndexing_status())
+                    .set("indexing_indexedAt", metadata.getIndexing_indexedAt())
+                    .set("indexing_errorDescription", metadata.getIndexing_errorDescription())  // ✅ CAMBIO
+                    
+                    // Estado inicial de reorganización (solo si indexación exitosa)
+                    .set("reorg_status", "FAILED".equals(metadata.getIndexing_status()) 
+                        ? "SKIPPED"   // ✅ Si falla indexación, skip reorganización
+                        : "PENDING")
+                    .set("reorg_attempts", 0)
+                    
+                    .setOnInsert("idUnico", metadata.getIdUnico());
             
             bulkOps.upsert(query, update);
+            
+            // ✅ NUEVO: Contar éxitos y fallos
+            if ("FAILED".equals(metadata.getIndexing_status())) {
+                failedCount++;
+            } else {
+                successCount++;
+            }
         }
         
         try {
@@ -82,11 +103,21 @@ public class BulkUpsertMongoItemWriter implements ItemWriter<ArchivoMetadata> {
             int inserted = result.getInsertedCount();
             int updated = result.getModifiedCount();
             
-            totalInserted += inserted;
-            totalUpdated += updated;
+            //totalInserted += inserted;
+            //totalUpdated += updated;
             
-            log.debug("Bulk write completed: {} inserted, {} updated (Total: {}/{})", 
-                     inserted, updated, totalInserted, totalUpdated);
+            // ✅ NUEVO: Log mejorado con conteo de errores
+            log.info("Bulk write completed: {} inserted, {} updated | Success: {}, Failed: {}", 
+                     inserted, updated, successCount, failedCount);
+            
+            // ✅ NUEVO: Alertar si tasa de error es alta
+            if (failedCount > 0) {
+                double failureRate = (double) failedCount / (successCount + failedCount) * 100;
+                if (failureRate > 5.0) {
+                    log.warn("⚠️ HIGH FAILURE RATE: {:.2f}% ({}/{})", 
+                        failureRate, failedCount, successCount + failedCount);
+                }
+            }
             
         } catch (Exception e) {
             log.error("Error in bulk write operation", e);

@@ -27,24 +27,45 @@ import java.time.Instant;
  */
 
 /**
- * Documento MongoDB para colección disorganized-files-index.
- * Representa un archivo indexado desde SFTP.
+ * Documento MongoDB para colección files_index (UNIFICADA).
+ * Soporta tanto indexación como reorganización.
  */
 @Data
 @Builder
-@Document(collection = "disorganized-files-index")
+@Document(collection = "files_index")  // ✅ CAMBIO: Colección unificada
 public class DisorganizedFilesIndexDocument {
     
     @Id
-    private String id;                // MongoDB _id (auto-generado)
+    private String id;
     
     @Indexed(unique = true)
     private String idUnico;           // SHA-256 del path completo
     
-    private String rutaOrigen;        // Path completo en SFTP
-    private String nombre;            // Nombre del archivo
-    private Instant mtime;            // Fecha modificación
-    private Long tamanio;             // Tamaño en bytes
-    private String extension;         // Extensión
-    private Instant indexadoEn;       // Timestamp indexación
+    // ========== METADATA DEL ARCHIVO ==========
+    private String sourcePath;         // ✅ NUEVO (antes rutaOrigen)
+    private String fileName;           // ✅ NUEVO (antes nombre)
+    private String extension;
+    private Long fileSize;             // ✅ NUEVO (antes tamanio)
+    private Instant lastModificationDate; // ✅ NUEVO (antes mtime)
+    
+    // ========== CONTROL DE INDEXACIÓN ==========
+    private String indexing_status;         // ✅ NUEVO: PENDING | COMPLETED | FAILED
+    private Instant indexing_indexedAt;     // ✅ NUEVO
+    private String indexing_errorDescription; // ✅ NUEVO
+    
+    // ========== CONTROL DE REORGANIZACIÓN ==========
+    private String reorg_status;            // ✅ NUEVO: PENDING | PROCESSING | SUCCESS | FAILED | SKIPPED
+    private String reorg_destinationPath;   // ✅ NUEVO
+    private Instant reorg_reorganizedAt;    // ✅ NUEVO
+    private Long reorg_jobExecutionId;      // ✅ NUEVO
+    private Long reorg_durationMs;          // ✅ NUEVO
+    private Integer reorg_attempts;         // ✅ NUEVO
+    private String reorg_errorDescription;  // ✅ NUEVO
+    private Instant reorg_lastAttemptAt;    // ✅ NUEVO
+    
+    // ========== METADATA DE NEGOCIO (OPCIONAL) ==========
+    private String business_tipoDocumento;  // ✅ NUEVO
+    private String business_codigoCliente;  // ✅ NUEVO
+    private Integer business_anio;          // ✅ NUEVO
+    private Integer business_mes;           // ✅ NUEVO
 }
