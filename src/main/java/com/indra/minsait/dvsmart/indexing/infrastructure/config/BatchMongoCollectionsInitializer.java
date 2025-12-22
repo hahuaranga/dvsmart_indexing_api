@@ -75,7 +75,7 @@ public class BatchMongoCollectionsInitializer {
             Query query = Query.query(Criteria.where("_id").is(seq));
             if (!mongoTemplate.exists(query, "BATCH_SEQUENCES")) {
                 mongoTemplate.insert(
-                    new Document("_id", seq).append("value", 0),
+                    new Document("_id", seq).append("value", 0L),
                     "BATCH_SEQUENCES"
                 );
             }
