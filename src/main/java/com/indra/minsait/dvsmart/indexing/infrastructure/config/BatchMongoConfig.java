@@ -27,6 +27,7 @@ import org.springframework.data.mongodb.MongoDatabaseFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
 import org.springframework.data.mongodb.core.convert.MongoConverter;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * Author: hahuaranga@indracompany.com
@@ -35,10 +36,7 @@ import org.springframework.data.mongodb.core.convert.MongoConverter;
  */
 
 /**
- * Configuración de Spring Batch con MongoDB usando custom incrementers.
- * 
- * Esta configuración soluciona el bug de ClassCastException al usar
- * nuestro FixedMongoSequenceIncrementer en lugar del buggy de Spring Batch.
+ * SOLUCIÓN SIMPLE Y DIRECTA: SimpleJobRepository con DAOs custom
  */
 @Configuration
 @EnableBatchProcessing
@@ -49,134 +47,93 @@ public class BatchMongoConfig {
     private static final String JOB_EXECUTION_SEQ = "BATCH_JOB_EXECUTION_SEQ";
     private static final String STEP_EXECUTION_SEQ = "BATCH_STEP_EXECUTION_SEQ";
 
-    /**
-     * MongoTemplate con soporte para ExecutionContext
-     */
     @Bean
     MongoTemplate batchMongoTemplate(
             MongoDatabaseFactory databaseFactory,
             MongoConverter converter) {
 
         MappingMongoConverter mappingConverter = (MappingMongoConverter) converter;
-        
-        // OBLIGATORIO para Spring Batch
         mappingConverter.setMapKeyDotReplacement("_");
         mappingConverter.afterPropertiesSet();
-
         return new MongoTemplate(databaseFactory, mappingConverter);
     }
 
-    /**
-     * TransactionManager
-     */
     @Bean
-    ResourcelessTransactionManager transactionManager() {
+    PlatformTransactionManager transactionManager() {
         return new ResourcelessTransactionManager();
     }
 
-    /**
-     * ✅ Custom incrementers (uno por cada secuencia)
-     */
     @Bean
     FixedMongoSequenceIncrementer jobInstanceIncrementer(MongoTemplate batchMongoTemplate) {
         return new FixedMongoSequenceIncrementer(
-            batchMongoTemplate,
-            SEQUENCES_COLLECTION,
-            JOB_INSTANCE_SEQ
+            batchMongoTemplate, SEQUENCES_COLLECTION, JOB_INSTANCE_SEQ
         );
     }
 
     @Bean
     FixedMongoSequenceIncrementer jobExecutionIncrementer(MongoTemplate batchMongoTemplate) {
         return new FixedMongoSequenceIncrementer(
-            batchMongoTemplate,
-            SEQUENCES_COLLECTION,
-            JOB_EXECUTION_SEQ
+            batchMongoTemplate, SEQUENCES_COLLECTION, JOB_EXECUTION_SEQ
         );
     }
 
     @Bean
     FixedMongoSequenceIncrementer stepExecutionIncrementer(MongoTemplate batchMongoTemplate) {
         return new FixedMongoSequenceIncrementer(
-            batchMongoTemplate,
-            SEQUENCES_COLLECTION,
-            STEP_EXECUTION_SEQ
+            batchMongoTemplate, SEQUENCES_COLLECTION, STEP_EXECUTION_SEQ
         );
     }
 
-    /**
-     * ✅ MongoJobInstanceDao con nuestro custom incrementer
-     */
     @Bean
-    MongoJobInstanceDao mongoJobInstanceDao(
+    MongoJobInstanceDao jobInstanceDao(
             MongoTemplate batchMongoTemplate,
             FixedMongoSequenceIncrementer jobInstanceIncrementer) {
         
         MongoJobInstanceDao dao = new MongoJobInstanceDao(batchMongoTemplate);
-        
-        // ✅ CRÍTICO: Inyectar nuestro custom incrementer
         dao.setJobInstanceIncrementer(jobInstanceIncrementer);
-        
         return dao;
     }
 
-    /**
-     * ✅ MongoJobExecutionDao con nuestro custom incrementer
-     */
     @Bean
-    MongoJobExecutionDao mongoJobExecutionDao(
+    MongoJobExecutionDao jobExecutionDao(
             MongoTemplate batchMongoTemplate,
             FixedMongoSequenceIncrementer jobExecutionIncrementer) {
         
         MongoJobExecutionDao dao = new MongoJobExecutionDao(batchMongoTemplate);
-        
-        // ✅ CRÍTICO: Inyectar nuestro custom incrementer
         dao.setJobExecutionIncrementer(jobExecutionIncrementer);
-        
         return dao;
     }
 
-    /**
-     * ✅ MongoStepExecutionDao con nuestro custom incrementer
-     */
     @Bean
-    MongoStepExecutionDao mongoStepExecutionDao(
+    MongoStepExecutionDao stepExecutionDao(
             MongoTemplate batchMongoTemplate,
             FixedMongoSequenceIncrementer stepExecutionIncrementer) {
         
         MongoStepExecutionDao dao = new MongoStepExecutionDao(batchMongoTemplate);
-        
-        // ✅ CRÍTICO: Inyectar nuestro custom incrementer
         dao.setStepExecutionIncrementer(stepExecutionIncrementer);
-        
         return dao;
     }
 
-    /**
-     * MongoExecutionContextDao
-     */
     @Bean
-    MongoExecutionContextDao mongoExecutionContextDao(MongoTemplate batchMongoTemplate) {
+    MongoExecutionContextDao executionContextDao(MongoTemplate batchMongoTemplate) {
         return new MongoExecutionContextDao(batchMongoTemplate);
     }
 
     /**
-     * ✅ JobRepository ensamblado con nuestros custom DAOs
+     * SimpleJobRepository directamente - sin FactoryBean
      */
     @Bean
     JobRepository jobRepository(
-            MongoJobInstanceDao mongoJobInstanceDao,
-            MongoJobExecutionDao mongoJobExecutionDao,
-            MongoStepExecutionDao mongoStepExecutionDao,
-            MongoExecutionContextDao mongoExecutionContextDao) {
+            MongoJobInstanceDao jobInstanceDao,
+            MongoJobExecutionDao jobExecutionDao,
+            MongoStepExecutionDao stepExecutionDao,
+            MongoExecutionContextDao executionContextDao) {
 
-        SimpleJobRepository repository = new SimpleJobRepository(
-            mongoJobInstanceDao,
-            mongoJobExecutionDao,
-            mongoStepExecutionDao,
-            mongoExecutionContextDao
+        return new SimpleJobRepository(
+            jobInstanceDao,
+            jobExecutionDao,
+            stepExecutionDao,
+            executionContextDao
         );
-        
-        return repository;
     }
 }
