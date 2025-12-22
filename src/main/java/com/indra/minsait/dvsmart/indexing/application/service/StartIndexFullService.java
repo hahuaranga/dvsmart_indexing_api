@@ -16,7 +16,6 @@ package com.indra.minsait.dvsmart.indexing.application.service;
 import com.indra.minsait.dvsmart.indexing.application.port.in.StartIndexFullUseCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.batch.core.job.Job;
 import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.job.parameters.JobParameters;
@@ -47,20 +46,9 @@ public class StartIndexFullService implements StartIndexFullUseCase {
     private final Job batchIndexFullJob;
     
     /**
-     * Ejecuta el job de indexación con lock distribuido.
-     * 
-     * @SchedulerLock asegura:
-     * - Solo una instancia ejecuta a la vez
-     * - Lock máximo 2 horas (si el proceso cuelga, se libera)
-     * - Lock mínimo 30 min (evita re-ejecuciones accidentales)
-     * - Nombre único: "indexing-full-job" (compartido entre pods)
+     * Ejecuta el job de indexación
      */
     @Override
-    @SchedulerLock(
-        name = "indexing-full-job",
-        lockAtMostFor = "PT2H",    // 2 horas máximo
-        lockAtLeastFor = "PT30M"   // 30 minutos mínimo
-    )
     public Long execute() {
         
         log.info("========================================");
