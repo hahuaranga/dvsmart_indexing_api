@@ -13,7 +13,11 @@
  */
 package com.indra.minsait.dvsmart.indexing.infrastructure.config;
 
-import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.core.configuration.JobRegistry;
+import org.springframework.batch.core.configuration.support.MapJobRegistry;
+import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.launch.JobOperator;
+import org.springframework.batch.core.launch.support.TaskExecutorJobOperator;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.repository.dao.mongodb.MongoExecutionContextDao;
 import org.springframework.batch.core.repository.dao.mongodb.MongoJobExecutionDao;
@@ -23,6 +27,7 @@ import org.springframework.batch.core.repository.support.SimpleJobRepository;
 import org.springframework.batch.infrastructure.support.transaction.ResourcelessTransactionManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
@@ -36,10 +41,10 @@ import org.springframework.transaction.PlatformTransactionManager;
  */
 
 /**
- * SOLUCIÓN SIMPLE Y DIRECTA: SimpleJobRepository con DAOs custom
+ * Configuración MANUAL de Spring Batch (SIN @EnableBatchProcessing)
+ * para tener control total sobre los DAOs
  */
 @Configuration
-@EnableBatchProcessing
 public class BatchMongoConfig {
 
     private static final String SEQUENCES_COLLECTION = "BATCH_SEQUENCES";
@@ -48,6 +53,7 @@ public class BatchMongoConfig {
     private static final String STEP_EXECUTION_SEQ = "BATCH_STEP_EXECUTION_SEQ";
 
     @Bean
+    @Primary
     MongoTemplate batchMongoTemplate(
             MongoDatabaseFactory databaseFactory,
             MongoConverter converter) {
@@ -59,7 +65,8 @@ public class BatchMongoConfig {
     }
 
     @Bean
-    PlatformTransactionManager transactionManager() {
+    @Primary
+    PlatformTransactionManager batchTransactionManager() {
         return new ResourcelessTransactionManager();
     }
 
@@ -85,6 +92,7 @@ public class BatchMongoConfig {
     }
 
     @Bean
+    @Primary
     MongoJobInstanceDao jobInstanceDao(
             MongoTemplate batchMongoTemplate,
             FixedMongoSequenceIncrementer jobInstanceIncrementer) {
@@ -95,6 +103,7 @@ public class BatchMongoConfig {
     }
 
     @Bean
+    @Primary
     MongoJobExecutionDao jobExecutionDao(
             MongoTemplate batchMongoTemplate,
             FixedMongoSequenceIncrementer jobExecutionIncrementer) {
@@ -105,6 +114,7 @@ public class BatchMongoConfig {
     }
 
     @Bean
+    @Primary
     MongoStepExecutionDao stepExecutionDao(
             MongoTemplate batchMongoTemplate,
             FixedMongoSequenceIncrementer stepExecutionIncrementer) {
@@ -115,14 +125,13 @@ public class BatchMongoConfig {
     }
 
     @Bean
+    @Primary
     MongoExecutionContextDao executionContextDao(MongoTemplate batchMongoTemplate) {
         return new MongoExecutionContextDao(batchMongoTemplate);
     }
 
-    /**
-     * SimpleJobRepository directamente - sin FactoryBean
-     */
     @Bean
+    @Primary
     JobRepository jobRepository(
             MongoJobInstanceDao jobInstanceDao,
             MongoJobExecutionDao jobExecutionDao,
@@ -135,5 +144,25 @@ public class BatchMongoConfig {
             stepExecutionDao,
             executionContextDao
         );
+    }
+
+    @Bean
+    JobRegistry jobRegistry() {
+        return new MapJobRegistry();
+    }
+
+    @Bean
+    @Primary
+    JobOperator jobOperator(
+            JobRepository jobRepository,
+            JobRegistry jobRegistry,
+            PlatformTransactionManager batchTransactionManager) throws Exception {
+        
+        TaskExecutorJobOperator operator = new TaskExecutorJobOperator();
+        operator.setJobRepository(jobRepository);
+        operator.setJobRegistry(jobRegistry);
+        //operator.setTransactionManager(batchTransactionManager);
+        operator.afterPropertiesSet();
+        return operator;
     }
 }
