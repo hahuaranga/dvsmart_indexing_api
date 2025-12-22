@@ -13,9 +13,7 @@
  */
 package com.indra.minsait.dvsmart.indexing.infrastructure.config;
 
-import org.springframework.batch.core.configuration.JobRegistry;
 import org.springframework.batch.core.configuration.support.MapJobRegistry;
-import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.launch.JobOperator;
 import org.springframework.batch.core.launch.support.TaskExecutorJobOperator;
 import org.springframework.batch.core.repository.JobRepository;
@@ -147,21 +145,15 @@ public class BatchMongoConfig {
     }
 
     @Bean
-    JobRegistry jobRegistry() {
-        return new MapJobRegistry();
-    }
-
-    @Bean
     @Primary
     JobOperator jobOperator(
-            JobRepository jobRepository,
-            JobRegistry jobRegistry,
-            PlatformTransactionManager batchTransactionManager) throws Exception {
+            JobRepository jobRepository) throws Exception {
+        
+        MapJobRegistry jobRegistry = new MapJobRegistry();
         
         TaskExecutorJobOperator operator = new TaskExecutorJobOperator();
         operator.setJobRepository(jobRepository);
         operator.setJobRegistry(jobRegistry);
-        //operator.setTransactionManager(batchTransactionManager);
         operator.afterPropertiesSet();
         return operator;
     }
