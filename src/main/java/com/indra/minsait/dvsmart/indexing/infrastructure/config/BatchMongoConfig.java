@@ -16,6 +16,7 @@ package com.indra.minsait.dvsmart.indexing.infrastructure.config;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.repository.support.MongoJobRepositoryFactoryBean;
+import org.springframework.batch.infrastructure.support.transaction.ResourcelessTransactionManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
@@ -65,11 +66,15 @@ public class BatchMongoConfig {
      * TransactionManager requerido por Spring Batch.
      * MongoDB soporta transacciones a nivel de documento/colección.
      */
+//    @Bean
+//    MongoTransactionManager batchTransactionManager(
+//            MongoDatabaseFactory databaseFactory) {
+//        return new MongoTransactionManager(databaseFactory);
+//    }
     @Bean
-    MongoTransactionManager batchTransactionManager(
-            MongoDatabaseFactory databaseFactory) {
-        return new MongoTransactionManager(databaseFactory);
-    }
+    ResourcelessTransactionManager transactionManager() {
+        return new ResourcelessTransactionManager();
+    }    
 
     /**
      * JobRepository oficial de Spring Batch para MongoDB.
