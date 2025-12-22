@@ -16,6 +16,9 @@ package com.indra.minsait.dvsmart.indexing.application.service;
 import com.indra.minsait.dvsmart.indexing.application.port.in.StartIndexFullUseCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.UUID;
+
 import org.springframework.batch.core.job.Job;
 import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.job.parameters.JobParameters;
@@ -63,6 +66,7 @@ public class StartIndexFullService implements StartIndexFullUseCase {
             JobParameters jobParameters = new JobParametersBuilder()
                     .addLong("timestamp", System.currentTimeMillis())
                     .addString("mode", "FULL")
+                    .addString("runId", UUID.randomUUID().toString()) 
                     .toJobParameters();
             
             // Lanzar job
