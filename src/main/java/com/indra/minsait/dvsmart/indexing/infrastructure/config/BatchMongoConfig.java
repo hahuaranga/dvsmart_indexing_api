@@ -15,19 +15,18 @@ package com.indra.minsait.dvsmart.indexing.infrastructure.config;
 
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.repository.JobRepository;
-import org.springframework.batch.core.repository.support.MongoJobRepositoryFactoryBean;
+import org.springframework.batch.core.repository.dao.mongodb.MongoExecutionContextDao;
+import org.springframework.batch.core.repository.dao.mongodb.MongoJobExecutionDao;
+import org.springframework.batch.core.repository.dao.mongodb.MongoJobInstanceDao;
+import org.springframework.batch.core.repository.dao.mongodb.MongoStepExecutionDao;
+import org.springframework.batch.core.repository.support.SimpleJobRepository;
 import org.springframework.batch.infrastructure.support.transaction.ResourcelessTransactionManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.convert.converter.Converter;
-import org.springframework.data.convert.ReadingConverter;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
 import org.springframework.data.mongodb.core.convert.MongoConverter;
-import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Author: hahuaranga@indracompany.com
@@ -36,38 +35,22 @@ import java.util.List;
  */
 
 /**
- * ✅ SOLUCIÓN FINAL: Custom Converter a nivel de BSON
+ * Configuración de Spring Batch con MongoDB usando custom incrementers.
  * 
- * Convertimos Integer → Long en la capa de deserialización de BSON,
- * antes de que llegue a Spring Batch.
+ * Esta configuración soluciona el bug de ClassCastException al usar
+ * nuestro FixedMongoSequenceIncrementer en lugar del buggy de Spring Batch.
  */
 @Configuration
 @EnableBatchProcessing
 public class BatchMongoConfig {
 
-    /**
-     * ✅ CRÍTICO: Converter que transforma Integer → Long en lectura
-     */
-    @ReadingConverter
-    static class IntegerToLongConverter implements Converter<Integer, Long> {
-        @Override
-        public Long convert(Integer source) {
-            return source.longValue();
-        }
-    }
+    private static final String SEQUENCES_COLLECTION = "BATCH_SEQUENCES";
+    private static final String JOB_INSTANCE_SEQ = "BATCH_JOB_INSTANCE_SEQ";
+    private static final String JOB_EXECUTION_SEQ = "BATCH_JOB_EXECUTION_SEQ";
+    private static final String STEP_EXECUTION_SEQ = "BATCH_STEP_EXECUTION_SEQ";
 
     /**
-     * ✅ Custom conversions con nuestro converter
-     */
-    @Bean
-    MongoCustomConversions customConversions() {
-        List<Converter<?, ?>> converters = new ArrayList<>();
-        converters.add(new IntegerToLongConverter());
-        return new MongoCustomConversions(converters);
-    }
-
-    /**
-     * MongoTemplate con custom conversions y configuración para Spring Batch
+     * MongoTemplate con soporte para ExecutionContext
      */
     @Bean
     MongoTemplate batchMongoTemplate(
@@ -76,22 +59,15 @@ public class BatchMongoConfig {
 
         MappingMongoConverter mappingConverter = (MappingMongoConverter) converter;
         
-        // ✅ OBLIGATORIO para Spring Batch: Reemplazar '.' en keys del ExecutionContext
-        // Sin esto, MongoDB rechaza documentos con keys como "step.name"
+        // OBLIGATORIO para Spring Batch
         mappingConverter.setMapKeyDotReplacement("_");
-        
-        // ✅ Aplicar custom conversions (Integer → Long)
-        mappingConverter.setCustomConversions(customConversions());
-        
-        // ✅ CRÍTICO: Re-inicializar después de cambios
-        // afterPropertiesSet() debe llamarse DESPUÉS de setCustomConversions y setMapKeyDotReplacement
         mappingConverter.afterPropertiesSet();
 
         return new MongoTemplate(databaseFactory, mappingConverter);
     }
 
     /**
-     * TransactionManager requerido por Spring Batch
+     * TransactionManager
      */
     @Bean
     ResourcelessTransactionManager transactionManager() {
@@ -99,18 +75,108 @@ public class BatchMongoConfig {
     }
 
     /**
-     * JobRepository usando MongoJobRepositoryFactoryBean estándar
+     * ✅ Custom incrementers (uno por cada secuencia)
+     */
+    @Bean
+    FixedMongoSequenceIncrementer jobInstanceIncrementer(MongoTemplate batchMongoTemplate) {
+        return new FixedMongoSequenceIncrementer(
+            batchMongoTemplate,
+            SEQUENCES_COLLECTION,
+            JOB_INSTANCE_SEQ
+        );
+    }
+
+    @Bean
+    FixedMongoSequenceIncrementer jobExecutionIncrementer(MongoTemplate batchMongoTemplate) {
+        return new FixedMongoSequenceIncrementer(
+            batchMongoTemplate,
+            SEQUENCES_COLLECTION,
+            JOB_EXECUTION_SEQ
+        );
+    }
+
+    @Bean
+    FixedMongoSequenceIncrementer stepExecutionIncrementer(MongoTemplate batchMongoTemplate) {
+        return new FixedMongoSequenceIncrementer(
+            batchMongoTemplate,
+            SEQUENCES_COLLECTION,
+            STEP_EXECUTION_SEQ
+        );
+    }
+
+    /**
+     * ✅ MongoJobInstanceDao con nuestro custom incrementer
+     */
+    @Bean
+    MongoJobInstanceDao mongoJobInstanceDao(
+            MongoTemplate batchMongoTemplate,
+            FixedMongoSequenceIncrementer jobInstanceIncrementer) {
+        
+        MongoJobInstanceDao dao = new MongoJobInstanceDao(batchMongoTemplate);
+        
+        // ✅ CRÍTICO: Inyectar nuestro custom incrementer
+        dao.setJobInstanceIncrementer(jobInstanceIncrementer);
+        
+        return dao;
+    }
+
+    /**
+     * ✅ MongoJobExecutionDao con nuestro custom incrementer
+     */
+    @Bean
+    MongoJobExecutionDao mongoJobExecutionDao(
+            MongoTemplate batchMongoTemplate,
+            FixedMongoSequenceIncrementer jobExecutionIncrementer) {
+        
+        MongoJobExecutionDao dao = new MongoJobExecutionDao(batchMongoTemplate);
+        
+        // ✅ CRÍTICO: Inyectar nuestro custom incrementer
+        dao.setJobExecutionIncrementer(jobExecutionIncrementer);
+        
+        return dao;
+    }
+
+    /**
+     * ✅ MongoStepExecutionDao con nuestro custom incrementer
+     */
+    @Bean
+    MongoStepExecutionDao mongoStepExecutionDao(
+            MongoTemplate batchMongoTemplate,
+            FixedMongoSequenceIncrementer stepExecutionIncrementer) {
+        
+        MongoStepExecutionDao dao = new MongoStepExecutionDao(batchMongoTemplate);
+        
+        // ✅ CRÍTICO: Inyectar nuestro custom incrementer
+        dao.setStepExecutionIncrementer(stepExecutionIncrementer);
+        
+        return dao;
+    }
+
+    /**
+     * MongoExecutionContextDao
+     */
+    @Bean
+    MongoExecutionContextDao mongoExecutionContextDao(MongoTemplate batchMongoTemplate) {
+        return new MongoExecutionContextDao(batchMongoTemplate);
+    }
+
+    /**
+     * ✅ JobRepository ensamblado con nuestros custom DAOs
      */
     @Bean
     JobRepository jobRepository(
-            MongoTemplate batchMongoTemplate,
-            ResourcelessTransactionManager transactionManager) throws Exception {
+            MongoJobInstanceDao mongoJobInstanceDao,
+            MongoJobExecutionDao mongoJobExecutionDao,
+            MongoStepExecutionDao mongoStepExecutionDao,
+            MongoExecutionContextDao mongoExecutionContextDao) {
 
-        MongoJobRepositoryFactoryBean factory = new MongoJobRepositoryFactoryBean();
-        factory.setMongoOperations(batchMongoTemplate);
-        factory.setTransactionManager(transactionManager);
-        factory.afterPropertiesSet();
-
-        return factory.getObject();
+        SimpleJobRepository repository = new SimpleJobRepository(
+            mongoJobInstanceDao,
+            mongoJobExecutionDao,
+            mongoStepExecutionDao,
+            mongoExecutionContextDao
+        );
+        
+        return repository;
     }
 }
