@@ -20,7 +20,6 @@ import org.springframework.batch.infrastructure.support.transaction.Resourceless
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
-import org.springframework.data.mongodb.MongoTransactionManager;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
 import org.springframework.data.mongodb.core.convert.MongoConverter;
@@ -66,11 +65,6 @@ public class BatchMongoConfig {
      * TransactionManager requerido por Spring Batch.
      * MongoDB soporta transacciones a nivel de documento/colección.
      */
-//    @Bean
-//    MongoTransactionManager batchTransactionManager(
-//            MongoDatabaseFactory databaseFactory) {
-//        return new MongoTransactionManager(databaseFactory);
-//    }
     @Bean
     ResourcelessTransactionManager transactionManager() {
         return new ResourcelessTransactionManager();
@@ -83,7 +77,7 @@ public class BatchMongoConfig {
     @Bean
     JobRepository jobRepository(
             MongoTemplate batchMongoTemplate,
-            MongoTransactionManager transactionManager) throws Exception {
+            ResourcelessTransactionManager transactionManager) throws Exception {
 
         MongoJobRepositoryFactoryBean factory =
                 new MongoJobRepositoryFactoryBean();
