@@ -21,12 +21,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.convert.ReadingConverter;
-import org.springframework.data.convert.WritingConverter;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
 import org.springframework.data.mongodb.core.convert.MongoConverter;
 import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -37,44 +37,17 @@ import java.util.List;
  */
 
 /**
- * Configuración de infraestructura Spring Batch usando MongoDB
- * como repositorio de metadatos.
- *
- * ✅ FIX: Custom converters para forzar Long en secuencias
- *
- * Compatible con:
- * - Spring Boot 4.0.0
- * - Spring Batch 6.0.0
- * - Java 21
+ * ✅ SOLUCIÓN FINAL: Custom Converter a nivel de BSON
+ * 
+ * Convertimos Integer → Long en la capa de deserialización de BSON,
+ * antes de que llegue a Spring Batch.
  */
 @Configuration
 @EnableBatchProcessing
 public class BatchMongoConfig {
 
     /**
-     * ✅ CRITICAL FIX: Custom Converters para Integer → Long
-     * 
-     * Problema: MongoDB BSON serializa números pequeños como Integer,
-     * pero Spring Batch espera Long en las secuencias.
-     * 
-     * Solución: Converter que fuerza todo a Long en lectura.
-     */
-    @Bean
-    MongoCustomConversions customConversions() {
-        List<Converter<?, ?>> converters = new ArrayList<>();
-        
-        // Converter que lee Integer y lo convierte a Long
-        converters.add(new IntegerToLongConverter());
-        
-        // Converter que escribe siempre Long (no Integer)
-        converters.add(new LongToLongConverter());
-        
-        return new MongoCustomConversions(converters);
-    }
-
-    /**
-     * ✅ Converter de lectura: Integer → Long
-     * Se ejecuta cuando MongoDB retorna un NumberInt pero esperamos Long
+     * ✅ CRÍTICO: Converter que transforma Integer → Long en lectura
      */
     @ReadingConverter
     static class IntegerToLongConverter implements Converter<Integer, Long> {
@@ -85,19 +58,17 @@ public class BatchMongoConfig {
     }
 
     /**
-     * ✅ Converter de escritura: Long → Long (forzar tipo)
-     * Asegura que los Long se escriban como NumberLong en BSON
+     * ✅ Custom conversions con nuestro converter
      */
-    @WritingConverter
-    static class LongToLongConverter implements Converter<Long, Long> {
-        @Override
-        public Long convert(Long source) {
-            return source; // Fuerza el tipo explícito
-        }
+    @Bean
+    MongoCustomConversions customConversions() {
+        List<Converter<?, ?>> converters = new ArrayList<>();
+        converters.add(new IntegerToLongConverter());
+        return new MongoCustomConversions(converters);
     }
 
     /**
-     * MongoTemplate con custom converters y soporte para ExecutionContext
+     * MongoTemplate con custom conversions y configuración para Spring Batch
      */
     @Bean
     MongoTemplate batchMongoTemplate(
@@ -105,12 +76,16 @@ public class BatchMongoConfig {
             MongoConverter converter) {
 
         MappingMongoConverter mappingConverter = (MappingMongoConverter) converter;
-
-        // OBLIGATORIO para Spring Batch (evita problemas con '.' en keys)
+        
+        // ✅ OBLIGATORIO para Spring Batch: Reemplazar '.' en keys del ExecutionContext
+        // Sin esto, MongoDB rechaza documentos con keys como "step.name"
         mappingConverter.setMapKeyDotReplacement("_");
         
-        // ✅ Aplicar custom converters
+        // ✅ Aplicar custom conversions (Integer → Long)
         mappingConverter.setCustomConversions(customConversions());
+        
+        // ✅ CRÍTICO: Re-inicializar después de cambios
+        // afterPropertiesSet() debe llamarse DESPUÉS de setCustomConversions y setMapKeyDotReplacement
         mappingConverter.afterPropertiesSet();
 
         return new MongoTemplate(databaseFactory, mappingConverter);
@@ -122,10 +97,10 @@ public class BatchMongoConfig {
     @Bean
     ResourcelessTransactionManager transactionManager() {
         return new ResourcelessTransactionManager();
-    }    
+    }
 
     /**
-     * JobRepository oficial de Spring Batch para MongoDB
+     * JobRepository usando MongoJobRepositoryFactoryBean estándar
      */
     @Bean
     JobRepository jobRepository(
@@ -135,8 +110,6 @@ public class BatchMongoConfig {
         MongoJobRepositoryFactoryBean factory = new MongoJobRepositoryFactoryBean();
         factory.setMongoOperations(batchMongoTemplate);
         factory.setTransactionManager(transactionManager);
-        
-        // ✅ NUEVO: Asegurar que las secuencias se inicialicen correctamente
         factory.afterPropertiesSet();
 
         return factory.getObject();
