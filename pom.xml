@@ -118,19 +118,16 @@
 			<scope>test</scope>
 		</dependency>
 		
-		<!-- ✅ ShedLock Core -->
 		<dependency>
-			<groupId>net.javacrumbs.shedlock</groupId>
-			<artifactId>shedlock-spring</artifactId>
-			<version>${shedlock.version}</version>
+		    <groupId>com.h2database</groupId>
+		    <artifactId>h2</artifactId>
+		    <scope>runtime</scope>
 		</dependency>
-
-		<!-- ✅ ShedLock MongoDB Provider -->
+		
 		<dependency>
-			<groupId>net.javacrumbs.shedlock</groupId>
-			<artifactId>shedlock-provider-mongo</artifactId>
-			<version>${shedlock.version}</version>
-		</dependency>
+		    <groupId>org.springframework.boot</groupId>
+		    <artifactId>spring-boot-starter-jdbc</artifactId>
+		</dependency>		
 		
 		<!-- Apache Commons Pool para gestión de pool lazy -->
 		<dependency>
