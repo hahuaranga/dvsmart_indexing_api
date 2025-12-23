@@ -28,7 +28,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "batch")
 public class BatchConfigProperties {
     private int chunkSize = 100;
-    private int concurrencyLimit = 10;
+    //private int concurrencyLimit = 10;
     private int threadPoolSize = 20;
     private int queueCapacity = 1000;
+    private int retryLimit = 3;
+    private int skipLimit = 5;
 }

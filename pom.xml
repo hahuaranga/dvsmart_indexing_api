@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.0.0</version>
+		<version>4.0.1</version>
 	</parent>
 	<groupId>com.indra.minsait.dvsmart.indexing</groupId>
 	<artifactId>dvsmart_indexing_api</artifactId>
@@ -17,18 +17,10 @@
 		<maven.compiler.source>21</maven.compiler.source>
 		<maven.compiler.target>21</maven.compiler.target>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-
 		<license.maven.plugin.version>5.0.0</license.maven.plugin.version>
 		<maven.build.timestamp.format>yyyy</maven.build.timestamp.format>
-
-		<spring-batch.version>6.0.0</spring-batch.version>
-		<spring-integration.version>7.0.0</spring-integration.version>
-
 		<!-- Other dependencies -->
-		<lombok.version>1.18.30</lombok.version>
 		<sshj.version>0.38.0</sshj.version>
-		<!-- ✅ ShedLock para bloqueo distribuido -->
-		<shedlock.version>5.10.2</shedlock.version>
 	</properties>
 
 	<dependencies>
@@ -36,6 +28,11 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
 
 		<dependency>
@@ -53,12 +50,19 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-batch</artifactId>
 		</dependency>
-		
+
+		<!-- Spring Boot JDBC Starter (incluye HikariCP y autoconfiguración) -->
 		<dependency>
-		    <groupId>com.h2database</groupId>
-		    <artifactId>h2</artifactId>
-		    <scope>runtime</scope>
-		</dependency>		
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-jdbc</artifactId>
+		</dependency>
+
+		<!-- H2 Database -->
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>compile</scope>
+		</dependency>
 
 		<!-- Spring Integration Core -->
 		<dependency>
@@ -122,13 +126,13 @@
 			<groupId>org.springframework.integration</groupId>
 			<artifactId>spring-integration-test</artifactId>
 			<scope>test</scope>
-		</dependency>	
-		
+		</dependency>
+
 		<!-- Apache Commons Pool para gestión de pool lazy -->
 		<dependency>
-		    <groupId>org.apache.commons</groupId>
-		    <artifactId>commons-pool2</artifactId>
-		</dependency>				
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-pool2</artifactId>
+		</dependency>
 
 	</dependencies>
 

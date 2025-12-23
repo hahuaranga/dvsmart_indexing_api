@@ -27,6 +27,7 @@ import org.springframework.batch.core.configuration.JobRegistry;
 import org.springframework.batch.core.configuration.support.MapJobRegistry;
 import org.springframework.batch.core.job.Job;
 import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.job.parameters.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.Step;
 import org.springframework.batch.core.step.builder.StepBuilder;
@@ -39,6 +40,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+
+import java.io.IOException;
 import java.util.Queue;
 import java.util.concurrent.Future;
 
@@ -68,11 +71,18 @@ import java.util.concurrent.Future;
 public class BatchIndexFullConfig {
 
     private final JobRepository jobRepository;
+    
     private final DirectoryDiscoveryService directoryDiscoveryService;
+    
     private final BulkUpsertMongoItemWriter bulkWriter;
+    
     private final BatchConfigProperties batchProps;
+    
     private final SftpConfigProperties sftpProps;
+    
     private final MetadataExtractorProcessor metadataExtractorProcessor;
+    
+    private final BatchConfigProperties props;
     
     @Qualifier("sftpOriginTemplate")
     private final SftpRemoteFileTemplate sftpTemplate;
@@ -177,10 +187,15 @@ public class BatchIndexFullConfig {
     @Bean
     Step indexingStep() {
         return new StepBuilder("indexingStep", jobRepository)
-                .<SftpFileEntry, Future<ArchivoMetadata>>chunk(500)
+                .<SftpFileEntry, Future<ArchivoMetadata>>chunk(props.getChunkSize())
                 .reader(directoryQueueReader())
                 .processor(asyncMetadataProcessor())
                 .writer(asyncBulkWriter())
+                .faultTolerant()
+                .skipLimit(props.getSkipLimit())
+                .skip(RuntimeException.class) // Omite RuntimeExceptions (ej. carpetas inaccesibles)
+                .retryLimit(props.getRetryLimit())
+                .retry(IOException.class) // Reintenta errores de I/O transitorios                
                 .build();
     }
 
@@ -190,7 +205,8 @@ public class BatchIndexFullConfig {
      */
     @Bean(name = "batchIndexFullJob")
     Job batchIndexFullJob() {
-        return new JobBuilder("BATCH-INDEX-FULL", jobRepository)
+		return new JobBuilder("BATCH-INDEX-FULL", jobRepository)
+        		.incrementer(new RunIdIncrementer())
                 .start(indexingStep())
                 .build();
     }

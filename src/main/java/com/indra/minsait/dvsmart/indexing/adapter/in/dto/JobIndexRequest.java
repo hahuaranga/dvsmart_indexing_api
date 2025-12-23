@@ -11,18 +11,28 @@
  *
  * /////////////////////////////////////////////////////////////////////////////
  */
-package com.indra.minsait.dvsmart.indexing.application.port.in;
+package com.indra.minsait.dvsmart.indexing.adapter.in.dto;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import jakarta.validation.constraints.NotBlank;
 
 /**
  * Author: hahuaranga@indracompany.com
- * Created on: 12-12-2025 at 12:30:07
- * File: StartReorganizeFullUseCase.java
+ * Created on: 23-12-2025 at 13:38:53
+ * File: JobIndexRequest.java
  */
 
-public interface StartIndexFullUseCase {
-    Long execute(@NotBlank(message = "Job name is required") String string, Map<String, Object> map);
+public record JobIndexRequest(
+		@NotBlank(message = "Job name is required")
+	    String jobName,
+	    Map<String, Object> parameters
+) {
+    public JobIndexRequest {
+        // Inicializar parámetros vacíos si es null
+        if (parameters == null) {
+            parameters = new HashMap<>();
+        }
+    }
 }

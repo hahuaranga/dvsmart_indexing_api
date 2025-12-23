@@ -14,8 +14,11 @@
 package com.indra.minsait.dvsmart.indexing.application.service;
 
 import com.indra.minsait.dvsmart.indexing.application.port.in.StartIndexFullUseCase;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import java.time.LocalDateTime;
+import java.util.Map;
 import org.springframework.batch.core.job.Job;
 import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.job.parameters.JobParameters;
@@ -29,57 +32,47 @@ import org.springframework.stereotype.Service;
  * File: StartIndexFullService.java
  */
 
-/**
- * Servicio para iniciar el job de indexación completa.
- * 
- * Incluye:
- * - Coordinación con ShedLock
- * - Validación de pre-requisitos
- * - Manejo de errores
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class StartIndexFullService implements StartIndexFullUseCase {
 
-    private final JobOperator jobOperator;
-    private final Job batchIndexFullJob;
+	private final JobOperator jobOperator;
+	
+	private final Job batchIndexFullJob;
     
-    /**
-     * Ejecuta el job de indexación
-     */
     @Override
-    public Long execute() {
-        
-        log.info("========================================");
-        log.info("Starting FULL INDEXING JOB with ShedLock");
-        log.info("========================================");
+    public Long execute(@NotBlank(message = "Job name is required") String string, Map<String, Object> map) {
+        log.info("Starting FULL INDEXING JOB");
         
         try {
-            // Validaciones pre-ejecución
             validatePrerequisites();
             
-            // Parámetros del job (timestamp para hacerlo único)
-            JobParameters jobParameters = new JobParametersBuilder()
-                    .addLong("timestamp", System.currentTimeMillis())
-                    .addString("mode", "FULL")
-                    .toJobParameters();
+            JobParametersBuilder paramsBuilder = new JobParametersBuilder();
+            paramsBuilder.addLocalDateTime("timestamp", LocalDateTime.now(), true);
+            map.forEach((key, value) -> {
+                if (value instanceof String) {
+                	paramsBuilder.addString(key, (String) value);
+                } else if (value instanceof Long) {
+                	paramsBuilder.addLong(key, (Long) value);
+                } else if (value instanceof Double) {
+                	paramsBuilder.addDouble(key, (Double) value);
+                }
+            });        
+            JobParameters jobParameters = paramsBuilder.toJobParameters();
+            log.info("Generated parameters: {}", jobParameters);
+
+            JobExecution jobExecution = jobOperator.run(batchIndexFullJob, jobParameters);
             
-            // Lanzar job
-            JobExecution jobExecution = jobOperator.start(batchIndexFullJob, jobParameters);
-            
-            log.info("Job launched successfully");
-            log.info("JobExecutionId: {}", jobExecution.getId());
-            log.info("Status: {}", jobExecution.getStatus());
-            log.info("========================================");
+            log.info("Job launched: executionId={}, status={}", 
+                jobExecution.getId(), 
+                jobExecution.getStatus());
             
             return jobExecution.getId();
             
         } catch (Exception e) {
-            log.error("========================================");
-            log.error("FAILED TO LAUNCH INDEXING JOB", e);
-            log.error("========================================");
-            throw new RuntimeException("Failed to start indexing job: " + e.getMessage(), e);
+            log.error("Failed to start job", e);
+            throw new RuntimeException("Failed to start job: " + e.getMessage(), e);
         }
     }
     
@@ -99,4 +92,5 @@ public class StartIndexFullService implements StartIndexFullUseCase {
         
         log.debug("Prerequisites validation passed");
     }
+
 }

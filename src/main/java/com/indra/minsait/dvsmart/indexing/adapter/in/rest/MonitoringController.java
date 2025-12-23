@@ -11,7 +11,7 @@
  *
  * /////////////////////////////////////////////////////////////////////////////
  */
-package com.indra.minsait.dvsmart.indexing.adapter.in.web;
+package com.indra.minsait.dvsmart.indexing.adapter.in.rest;
 
 import com.indra.minsait.dvsmart.indexing.infrastructure.sftp.CustomLazySftpSessionFactory;
 import com.indra.minsait.dvsmart.indexing.infrastructure.sftp.SftpPoolMonitor;

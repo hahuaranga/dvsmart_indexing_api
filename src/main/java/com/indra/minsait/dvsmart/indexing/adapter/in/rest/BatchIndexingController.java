@@ -11,16 +11,18 @@
  *
  * /////////////////////////////////////////////////////////////////////////////
  */
-package com.indra.minsait.dvsmart.indexing.adapter.in.web;
-
+package com.indra.minsait.dvsmart.indexing.adapter.in.rest;
+import com.indra.minsait.dvsmart.indexing.adapter.in.dto.JobIndexRequest;
 import com.indra.minsait.dvsmart.indexing.application.port.in.StartIndexFullUseCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
+import jakarta.validation.*;
 
 /**
  * Author: hahuaranga@indracompany.com
@@ -37,10 +39,13 @@ public class BatchIndexingController {
     private final StartIndexFullUseCase startIndexingFullUseCase;
 
     @PostMapping("/full")
-    public ResponseEntity<Map<String, Object>> startFullReorganization() {
+    public ResponseEntity<Map<String, Object>> startFullReorganization(@Valid @RequestBody JobIndexRequest request) {
         log.info("Received request to start full indexing of disorganized files");
         
-        Long jobExecutionId = startIndexingFullUseCase.execute();
+        Long jobExecutionId = startIndexingFullUseCase.execute(
+        		request.jobName(),
+        		request.parameters()
+        		);
         
         return ResponseEntity.accepted()
                 .body(Map.of(
