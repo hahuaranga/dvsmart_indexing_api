@@ -24,6 +24,7 @@ import com.indra.minsait.dvsmart.indexing.infrastructure.config.SftpConfigProper
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.configuration.JobRegistry;
+import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.configuration.support.MapJobRegistry;
 import org.springframework.batch.core.job.Job;
 import org.springframework.batch.core.job.builder.JobBuilder;
@@ -40,9 +41,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-
 import java.io.IOException;
-import java.util.Queue;
 import java.util.concurrent.Future;
 
 /**
@@ -71,17 +70,11 @@ import java.util.concurrent.Future;
 public class BatchIndexFullConfig {
 
     private final JobRepository jobRepository;
-    
     private final DirectoryDiscoveryService directoryDiscoveryService;
-    
     private final BulkUpsertMongoItemWriter bulkWriter;
-    
     private final BatchConfigProperties batchProps;
-    
     private final SftpConfigProperties sftpProps;
-    
     private final MetadataExtractorProcessor metadataExtractorProcessor;
-    
     private final BatchConfigProperties props;
     
     @Qualifier("sftpOriginTemplate")
@@ -92,10 +85,6 @@ public class BatchIndexFullConfig {
         return new MapJobRegistry();
     }
 
-    /**
-     * TaskExecutor para procesamiento asíncrono.
-     * Solo para processor y writer (sin SFTP).
-     */
     @Bean(name = "indexingTaskExecutor")
     TaskExecutor indexingTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -110,55 +99,21 @@ public class BatchIndexFullConfig {
     }
 
     /**
-     * Pre-procesamiento: Descubrir todos los directorios.
-     * 
-     * Ventajas con pool lazy:
-     * - Usa 1 sola sesión SFTP para todo el descubrimiento
-     * - Template adquiere y libera sesión automáticamente
-     * - Sesión se devuelve al pool al terminar
-     */
-    private Queue<String> discoverDirectoriesBeforeJob() {
-        log.info("========================================");
-        log.info("Starting directory discovery phase...");
-        log.info("========================================");
-        
-        long start = System.currentTimeMillis();
-        
-        Queue<String> directories = directoryDiscoveryService.discoverDirectories(
-            sftpTemplate,
-            sftpProps.getOrigin().getBaseDir()
-        );
-        
-        long duration = System.currentTimeMillis() - start;
-        
-        log.info("========================================");
-        log.info("Directory discovery completed");
-        log.info("Total directories: {}", directories.size());
-        log.info("Duration: {} ms", duration);
-        log.info("========================================");
-        
-        return directories;
-    }
-
-    /**
-     * Reader que consume la queue de directorios.
-     * 
-     * Usa pool lazy:
-     * - Adquiere sesión solo cuando lee archivos de un directorio
-     * - Libera sesión al terminar cada directorio
-     * - Típicamente usa 1-2 conexiones concurrentes
+     * ✅ SOLUCIÓN: Reader con @StepScope para fresh discovery en cada job
      */
     @Bean
+    @StepScope  // ✅ CRÍTICO: Nueva instancia por step
     ItemReader<SftpFileEntry> directoryQueueReader() {
-        Queue<String> directoryQueue = discoverDirectoriesBeforeJob();
-        //return new DirectoryQueueItemReader(sftpTemplate, directoryQueue);
-        return new DirectoryQueueItemReader(sftpTemplate, directoryDiscoveryService, directoryQueue.element());
+        
+        log.info("🔄 Creating NEW DirectoryQueueItemReader instance");
+        
+        return new DirectoryQueueItemReader(
+            sftpTemplate, 
+            directoryDiscoveryService, 
+            sftpProps.getOrigin().getBaseDir()  // ✅ Pasar baseDir
+        );
     }
 
-    /**
-     * Processor asíncrono para extracción de metadata.
-     * No usa SFTP, solo procesa datos en memoria.
-     */
     @Bean
     AsyncItemProcessor<SftpFileEntry, ArchivoMetadata> asyncMetadataProcessor() {
         AsyncItemProcessor<SftpFileEntry, ArchivoMetadata> asyncProcessor = 
@@ -167,46 +122,30 @@ public class BatchIndexFullConfig {
         return asyncProcessor;
     }
 
-    /**
-     * Writer asíncrono para MongoDB.
-     * No usa SFTP, solo escribe a MongoDB.
-     */
     @Bean
     AsyncItemWriter<ArchivoMetadata> asyncBulkWriter() {
         return new AsyncItemWriter<>(bulkWriter);
     }
 
-    /**
-     * Step principal de indexación.
-     * 
-     * Chunk size: 500 (balance entre throughput y memoria)
-     * - Reader: Secuencial, 1-2 conexiones SFTP
-     * - Processor: Paralelo, sin SFTP
-     * - Writer: Paralelo, sin SFTP
-     */
     @Bean
     Step indexingStep() {
         return new StepBuilder("indexingStep", jobRepository)
                 .<SftpFileEntry, Future<ArchivoMetadata>>chunk(props.getChunkSize())
-                .reader(directoryQueueReader())
+                .reader(directoryQueueReader())  // ✅ Spring inyectará nueva instancia
                 .processor(asyncMetadataProcessor())
                 .writer(asyncBulkWriter())
                 .faultTolerant()
                 .skipLimit(props.getSkipLimit())
-                .skip(RuntimeException.class) // Omite RuntimeExceptions (ej. carpetas inaccesibles)
+                .skip(RuntimeException.class)
                 .retryLimit(props.getRetryLimit())
-                .retry(IOException.class) // Reintenta errores de I/O transitorios                
+                .retry(IOException.class)
                 .build();
     }
 
-    /**
-     * Job de indexación completa.
-     * Coordinado con ShedLock para evitar ejecuciones concurrentes.
-     */
     @Bean(name = "batchIndexFullJob")
     Job batchIndexFullJob() {
-		return new JobBuilder("BATCH-INDEX-FULL", jobRepository)
-        		.incrementer(new RunIdIncrementer())
+        return new JobBuilder("BATCH-INDEX-FULL", jobRepository)
+                .incrementer(new RunIdIncrementer())
                 .start(indexingStep())
                 .build();
     }

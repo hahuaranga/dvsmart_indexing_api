@@ -17,7 +17,9 @@ import com.indra.minsait.dvsmart.indexing.domain.model.SftpFileEntry;
 import com.indra.minsait.dvsmart.indexing.domain.service.DirectoryDiscoveryService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.sshd.sftp.client.SftpClient;
+import org.springframework.batch.infrastructure.item.ExecutionContext;
 import org.springframework.batch.infrastructure.item.ItemReader;
+import org.springframework.batch.infrastructure.item.ItemStream;
 import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
 import java.util.LinkedList;
 import java.util.Queue;
@@ -42,7 +44,7 @@ import java.util.Queue;
  * - Sesiones SFTP del pool lazy se usan eficientemente
  */
 @Slf4j
-public class DirectoryQueueItemReader implements ItemReader<SftpFileEntry> {
+public class DirectoryQueueItemReader implements ItemReader<SftpFileEntry>, ItemStream {
 
     private final SftpRemoteFileTemplate sftpTemplate;
     private final DirectoryDiscoveryService discoveryService;
@@ -56,7 +58,7 @@ public class DirectoryQueueItemReader implements ItemReader<SftpFileEntry> {
     private boolean discoveryCompleted = false;
 
     /**
-     * Constructor con discovery lazy.
+     * ✅ CAMBIO: Constructor solo recibe baseDir
      */
     public DirectoryQueueItemReader(
             SftpRemoteFileTemplate sftpTemplate,
@@ -68,10 +70,44 @@ public class DirectoryQueueItemReader implements ItemReader<SftpFileEntry> {
         this.currentDirectoryFiles = new LinkedList<>();
     }
 
-	@Override
+    // ✅ NUEVO: Implementar ItemStream para control de ciclo de vida
+    @Override
+    public void open(ExecutionContext executionContext) {
+        log.info("========================================");
+        log.info("🔄 OPEN: Initializing DirectoryQueueItemReader");
+        log.info("Base directory: {}", baseDir);
+        log.info("========================================");
+        
+        this.discoveryCompleted = false;
+        this.directoryQueue = null;
+        this.currentDirectoryFiles.clear();
+        this.totalFilesRead = 0;
+        this.directoriesProcessed = 0;
+    }
+
+    @Override
+    public void update(ExecutionContext executionContext) {
+        executionContext.putInt("directoriesProcessed", directoriesProcessed);
+        executionContext.putInt("totalFilesRead", totalFilesRead);
+    }
+
+    @Override
+    public void close() {
+        log.info("========================================");
+        log.info("🛑 CLOSE: Cleaning up DirectoryQueueItemReader");
+        log.info("Final stats: {} files, {} directories", totalFilesRead, directoriesProcessed);
+        log.info("========================================");
+        
+        if (directoryQueue != null) {
+            directoryQueue.clear();
+        }
+        currentDirectoryFiles.clear();
+    }
+
+    @Override
     public SftpFileEntry read() throws Exception {
         
-        // ✅ LAZY DISCOVERY: Solo ejecutar la primera vez que se llama read()
+        // ✅ LAZY DISCOVERY: Solo la primera vez
         if (!discoveryCompleted) {
             executeDirectoryDiscovery();
             discoveryCompleted = true;
@@ -93,12 +129,12 @@ public class DirectoryQueueItemReader implements ItemReader<SftpFileEntry> {
             return null;
         }
         
-        // Cargar siguiente directorio
-        String nextDirectory = directoryQueue.poll();
+        // ✅ CRÍTICO: Cargar siguiente directorio
+        String nextDirectory = directoryQueue.poll();  // ✅ poll() remueve de la queue
         loadDirectoryFiles(nextDirectory);
         directoriesProcessed++;
         
-        // Log progreso cada 100 directorios
+        // Log progreso
         if (directoriesProcessed % 100 == 0) {
             log.info("📊 Progress: {} directories processed, {} files indexed", 
                      directoriesProcessed, totalFilesRead);
@@ -108,17 +144,17 @@ public class DirectoryQueueItemReader implements ItemReader<SftpFileEntry> {
     }
 
     /**
-     * Ejecuta el discovery completo de directorios.
-     * Solo se llama una vez, la primera vez que se invoca read().
+     * ✅ Ejecuta discovery completo FRESH
      */
     private void executeDirectoryDiscovery() {
         log.info("========================================");
         log.info("PHASE 1: DIRECTORY DISCOVERY");
+        log.info("Base directory: {}", baseDir);
         log.info("========================================");
         
         long startTime = System.currentTimeMillis();
         
-        // ✅ Discovery usa template (sesión automática del pool lazy)
+        // ✅ Discovery SIEMPRE fresh
         directoryQueue = discoveryService.discoverDirectories(sftpTemplate, baseDir);
         
         long duration = System.currentTimeMillis() - startTime;
@@ -132,12 +168,10 @@ public class DirectoryQueueItemReader implements ItemReader<SftpFileEntry> {
     }
 
     /**
-     * Carga archivos de un directorio usando template.
-     * Session es adquirida y liberada automáticamente por el pool lazy.
+     * ✅ Carga archivos de UN directorio
      */
     private void loadDirectoryFiles(String directory) {
         try {
-            // ✅ Template maneja todo el ciclo de vida de la sesión
             sftpTemplate.execute(session -> {
                 
                 log.debug("📂 Scanning directory: {}", directory);
@@ -152,7 +186,7 @@ public class DirectoryQueueItemReader implements ItemReader<SftpFileEntry> {
                         continue;
                     }
                     
-                    // ✅ Solo procesar ARCHIVOS (directorios ya están en la queue)
+                    // ✅ Solo procesar ARCHIVOS
                     if (!entry.getAttributes().isDirectory()) {
                         String fullPath = directory.endsWith("/") 
                             ? directory + name 
@@ -178,12 +212,10 @@ public class DirectoryQueueItemReader implements ItemReader<SftpFileEntry> {
                 }
                 
                 return null;
-                
-            }); // ← Session automáticamente liberada aquí
+            });
             
         } catch (Exception e) {
             log.error("❌ Error loading directory: {}", directory, e);
-            // Spring Batch manejará el retry según configuración
             throw new RuntimeException("Failed to load directory: " + directory, e);
         }
     }

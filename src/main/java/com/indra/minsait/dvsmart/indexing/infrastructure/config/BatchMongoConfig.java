@@ -43,6 +43,7 @@ import org.springframework.transaction.PlatformTransactionManager;
  * para tener control total sobre los DAOs
  */
 @Configuration
+//@EnableBatchProcessing
 public class BatchMongoConfig {
 
     private static final String SEQUENCES_COLLECTION = "BATCH_SEQUENCES";
