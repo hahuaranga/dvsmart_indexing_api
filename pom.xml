@@ -256,9 +256,9 @@
 		</plugins>
 	</build>
 
-	<!-- Profiles -->
+<!--	 Profiles 
 	<profiles>
-		<!-- Development Profile -->
+		 Development Profile 
 		<profile>
 			<id>dev</id>
 			<activation>
@@ -269,13 +269,13 @@
 			</properties>
 		</profile>
 
-		<!-- Production Profile -->
+		 Production Profile 
 		<profile>
 			<id>prod</id>
 			<properties>
 				<spring.profiles.active>prod</spring.profiles.active>
 			</properties>
 		</profile>
-	</profiles>
+	</profiles>-->
 
 </project>

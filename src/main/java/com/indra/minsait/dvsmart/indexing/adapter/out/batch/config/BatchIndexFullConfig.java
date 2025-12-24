@@ -23,9 +23,7 @@ import com.indra.minsait.dvsmart.indexing.infrastructure.config.BatchConfigPrope
 import com.indra.minsait.dvsmart.indexing.infrastructure.config.SftpConfigProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.batch.core.configuration.JobRegistry;
 import org.springframework.batch.core.configuration.annotation.StepScope;
-import org.springframework.batch.core.configuration.support.MapJobRegistry;
 import org.springframework.batch.core.job.Job;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.job.parameters.RunIdIncrementer;
@@ -79,11 +77,6 @@ public class BatchIndexFullConfig {
     
     @Qualifier("sftpOriginTemplate")
     private final SftpRemoteFileTemplate sftpTemplate;
-
-    @Bean
-    JobRegistry jobRegistry() {
-        return new MapJobRegistry();
-    }
 
     @Bean(name = "indexingTaskExecutor")
     TaskExecutor indexingTaskExecutor() {
