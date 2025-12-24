@@ -47,8 +47,8 @@
 
 		<!-- Spring Batch -->
 		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-batch</artifactId>
+		    <groupId>org.springframework.boot</groupId>
+		    <artifactId>spring-boot-starter-batch-jdbc</artifactId>
 		</dependency>
 
 		<!-- Spring Integration Core -->
@@ -126,11 +126,6 @@
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency> 
-
-		<dependency>
-		    <groupId>org.springframework.boot</groupId>
-		    <artifactId>spring-boot-starter-jdbc</artifactId>
-		</dependency>
 
 	</dependencies>
 
@@ -255,27 +250,5 @@
 			</plugin>
 		</plugins>
 	</build>
-
-<!--	 Profiles 
-	<profiles>
-		 Development Profile 
-		<profile>
-			<id>dev</id>
-			<activation>
-				<activeByDefault>true</activeByDefault>
-			</activation>
-			<properties>
-				<spring.profiles.active>dev</spring.profiles.active>
-			</properties>
-		</profile>
-
-		 Production Profile 
-		<profile>
-			<id>prod</id>
-			<properties>
-				<spring.profiles.active>prod</spring.profiles.active>
-			</properties>
-		</profile>
-	</profiles>-->
 
 </project>
