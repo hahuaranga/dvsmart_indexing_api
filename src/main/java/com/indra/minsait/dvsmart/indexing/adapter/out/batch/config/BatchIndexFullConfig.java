@@ -13,6 +13,7 @@
  */
 package com.indra.minsait.dvsmart.indexing.adapter.out.batch.config;
 
+import com.indra.minsait.dvsmart.indexing.adapter.out.batch.listener.JobExecutionAuditListener;
 import com.indra.minsait.dvsmart.indexing.adapter.out.batch.processor.MetadataExtractorProcessor;
 import com.indra.minsait.dvsmart.indexing.adapter.out.batch.reader.DirectoryQueueItemReader;
 import com.indra.minsait.dvsmart.indexing.adapter.out.batch.writer.BulkUpsertMongoItemWriter;
@@ -74,6 +75,7 @@ public class BatchIndexFullConfig {
     private final SftpConfigProperties sftpProps;
     private final MetadataExtractorProcessor metadataExtractorProcessor;
     private final BatchConfigProperties props;
+    private final JobExecutionAuditListener auditListener;
     
     @Qualifier("sftpOriginTemplate")
     private final SftpRemoteFileTemplate sftpTemplate;
@@ -139,6 +141,7 @@ public class BatchIndexFullConfig {
     Job batchIndexFullJob() {
         return new JobBuilder("BATCH-INDEX-FULL", jobRepository)
                 .incrementer(new RunIdIncrementer())
+                .listener(auditListener)
                 .start(indexingStep())
                 .build();
     }

@@ -5,16 +5,21 @@
 - [Descripción General](#-descripción-general)
 - [Stack Tecnológico](#-stack-tecnológico)
 - [Arquitectura del Sistema](#-arquitectura-del-sistema)
+  - [Diagrama de Componentes](#diagrama-de-componentes)
+  - [Flujo de Procesamiento](#flujo-de-procesamiento)
+  - [Arquitectura Hexagonal](#arquitectura-hexagonal)
+  - [Técnicas de Procesamiento](#técnicas-de-procesamiento)
+  - [Sistema de Auditoría](#sistema-de-auditoría)
 - [Requisitos Previos](#-requisitos-previos)
 - [Instalación y Setup](#-instalación-y-setup)
 - [Guía Completa de Configuración](#-guía-completa-de-configuración)
 - [Configuración de Alto Rendimiento](#-configuración-de-alto-rendimiento)
 - [Uso y API](#-uso-y-api)
-- [Arquitectura del Batch Job](#-arquitectura-del-batch-job)
 - [Monitorización y Observabilidad](#-monitorización-y-observabilidad)
 - [Troubleshooting](#-troubleshooting)
 - [Mantenimiento y Testing](#-mantenimiento-y-testing)
-- [Consideraciones de Seguridad](#-consideraciones-de-seguridad)
+- [Referencias](#-referencias)
+- [Soporte y Contacto](#-soporte-y-contacto)
 
 ---
 
@@ -26,16 +31,17 @@
 
 - **Indexación masiva**: Procesamiento de 11M+ archivos en ~30-60 minutos
 - **Descubrimiento de estructura**: Mapeo recursivo de jerarquías de directorios complejas
-- **Coordinación distribuida**: Pool de conexiones SFTP con gestión automática de recursos
-- **Alta disponibilidad**: Health checks y auto-recuperación de conexiones
+- **Auditoría completa**: Registro detallado de cada ejecución en MongoDB
+- **Alta disponibilidad**: Pool de conexiones SFTP con gestión automática de recursos
 
 ### Características Clave
 
 ✅ **Pool de Conexiones SFTP Lazy**: Conexiones creadas bajo demanda, liberadas automáticamente  
 ✅ **Procesamiento Asíncrono**: Pipeline de 3 etapas (Reader → Processor → Writer) con paralelismo configurable  
 ✅ **Bulk Upserts a MongoDB**: 3000-5000 documentos/segundo vs 100-200 con operaciones individuales  
-✅ **Persistencia Dual**: PostgreSQL para metadatos de Spring Batch, MongoDB para archivos indexados  
-✅ **Monitorización Integrada**: Actuator + endpoints custom para observabilidad del pool SFTP  
+✅ **Persistencia Dual**: PostgreSQL para metadatos de Spring Batch, MongoDB para archivos indexados y auditoría  
+✅ **Sistema de Auditoría**: Registro completo de métricas, throughput y estado de cada ejecución  
+✅ **Monitorización Integrada**: Actuator + endpoints custom para observabilidad del pool SFTP y jobs  
 ✅ **Resiliente**: Validación de conexiones, eviction de idle sessions, retry logic  
 
 ---
@@ -48,8 +54,8 @@
 | **Spring Boot** | 4.0.1 | Framework de aplicación |
 | **Spring Batch** | 6.0.0 | Procesamiento por lotes de alto rendimiento |
 | **Spring Integration** | 7.0.0 | Integración con sistemas externos (SFTP) |
-| **MongoDB** | 5.0+ | Persistencia de metadata de archivos |
-| **PostgreSQL** | - | Metadata de Spring Batch (job repository) |
+| **MongoDB** | 5.0+ | Persistencia de metadata de archivos y auditoría |
+| **PostgreSQL** | 12+ | Metadata de Spring Batch (job repository) |
 | **Apache Commons Pool2** | - | Gestión del pool de conexiones SFTP |
 | **SSHJ** | 0.38.0 | Cliente SFTP nativo |
 | **Lombok** | 1.18.30 | Reducción de boilerplate |
@@ -74,6 +80,7 @@ graph TB
 
     subgraph "Spring Batch Job"
         JOB[BatchIndexFullJob]
+        LISTENER[JobExecutionAuditListener]
         STEP[IndexingStep]
         
         subgraph "Pipeline Asíncrono"
@@ -86,6 +93,7 @@ graph TB
     subgraph "Infraestructura"
         POOL[CustomLazySftpSessionFactory]
         MONITOR[SftpPoolMonitor]
+        AUDIT_SVC[JobAuditService]
     end
 
     subgraph "Sistemas Externos"
@@ -97,6 +105,8 @@ graph TB
     API -->|POST /api/batch/index/full| UC
     UC --> SVC
     SVC -->|Lanza job| JOB
+    JOB -->|beforeJob/afterJob| LISTENER
+    LISTENER --> AUDIT_SVC
     JOB --> STEP
     STEP --> READER
     READER -->|Lee archivos| PROCESSOR
@@ -107,6 +117,7 @@ graph TB
     POOL -.->|Conexión SSH| SFTP
     MONITOR -.->|Monitorea| POOL
     JOB -.->|Persiste estado| POSTGRES
+    AUDIT_SVC -.->|Guarda auditoría| MONGO
 ```
 
 ### Flujo de Procesamiento
@@ -115,6 +126,7 @@ graph TB
 sequenceDiagram
     participant Client
     participant Controller
+    participant AuditListener
     participant BatchJob
     participant Reader
     participant SftpPool
@@ -125,6 +137,10 @@ sequenceDiagram
 
     Client->>Controller: POST /api/batch/index/full
     Controller->>BatchJob: Lanzar job
+    
+    Note over BatchJob: JobExecutionListener.beforeJob()
+    BatchJob->>AuditListener: beforeJob(jobExecution)
+    AuditListener->>MongoDB: INSERT audit record (STARTED)
     BatchJob->>PostgreSQL: Registrar ejecución
     
     Note over BatchJob: Phase 1: Discovery
@@ -150,6 +166,11 @@ sequenceDiagram
         Writer->>PostgreSQL: Commit chunk
     end
     
+    Note over BatchJob: JobExecutionListener.afterJob()
+    BatchJob->>AuditListener: afterJob(jobExecution)
+    AuditListener->>PostgreSQL: Leer métricas finales
+    AuditListener->>MongoDB: UPDATE audit record (COMPLETED)
+    
     BatchJob->>PostgreSQL: Actualizar estado COMPLETED
     BatchJob-->>Controller: JobExecutionId
     Controller-->>Client: 202 Accepted
@@ -160,9 +181,11 @@ sequenceDiagram
 ```mermaid
 graph LR
     subgraph "Dominio"
-        M[ArchivoMetadata]
-        S[FileMetadataService]
-        D[DirectoryDiscoveryService]
+        M1[ArchivoMetadata]
+        M2[JobExecutionAudit]
+        S1[FileMetadataService]
+        S2[DirectoryDiscoveryService]
+        S3[JobAuditService]
     end
 
     subgraph "Puertos Entrada"
@@ -172,6 +195,7 @@ graph LR
     subgraph "Adaptadores Entrada"
         AI1[BatchIndexingController]
         AI2[MonitoringController]
+        AI3[JobAuditController]
     end
 
     subgraph "Adaptadores Salida"
@@ -179,22 +203,28 @@ graph LR
         AO2[MetadataExtractorProcessor]
         AO3[BulkUpsertMongoItemWriter]
         AO4[CustomLazySftpSessionFactory]
+        AO5[JobExecutionAuditListener]
     end
 
     AI1 --> PI
     AI2 --> PI
-    PI --> S
-    S --> M
-    AO1 --> D
+    AI3 --> S3
+    PI --> S1
+    PI --> S2
+    S1 --> M1
+    S3 --> M2
+    AO1 --> S2
     AO1 --> AO4
-    AO2 --> S
+    AO2 --> S1
     AO3 --> MongoDB[(MongoDB)]
+    AO5 --> S3
     AO4 --> SFTP[SFTP Server]
 ```
 
 ### Técnicas de Procesamiento
 
 #### 1. **Lazy Directory Discovery**
+
 ```mermaid
 flowchart TD
     A[Primera llamada a read] --> B{Discovery completado?}
@@ -213,11 +243,38 @@ flowchart TD
 - Discovery se ejecuta solo cuando el job arranca (no al iniciar la app)
 - Memoria eficiente: O(D) donde D = archivos en directorio actual
 - Una sola sesión SFTP para todo el escaneo
+- Procesamiento BFS (Breadth-First Search) recursivo
+
+**Implementación:**
+```java
+public SftpFileEntry read() {
+    // Primera llamada: discovery completo
+    if (!discoveryCompleted) {
+        executeDirectoryDiscovery();  // BFS recursivo
+        discoveryCompleted = true;
+    }
+    
+    // Retornar archivos del directorio actual
+    if (!currentDirectoryFiles.isEmpty()) {
+        return currentDirectoryFiles.poll();
+    }
+    
+    // Si no hay más directorios, terminar
+    if (directoryQueue.isEmpty()) {
+        return null;
+    }
+    
+    // Cargar siguiente directorio
+    loadDirectoryFiles(directoryQueue.poll());
+    return read();
+}
+```
 
 #### 2. **Async Processing Pipeline**
+
 ```mermaid
 flowchart LR
-    R[Reader<br/>1 thread] --> Q1[Queue]
+    R[Reader<br/>1 thread] --> Q1[Queue<br/>Capacity: 1000]
     Q1 --> P1[Processor<br/>Thread 1]
     Q1 --> P2[Processor<br/>Thread 2]
     Q1 --> P3[Processor<br/>...]
@@ -235,8 +292,31 @@ flowchart LR
 - Paralelismo configurable (20 threads por defecto)
 - No bloqueante: Reader continúa mientras se procesa
 - Processor sin I/O: Solo transformación en memoria
+- Queue capacity evita saturación de memoria
+
+**Configuración:**
+```java
+@Bean
+AsyncItemProcessor<SftpFileEntry, ArchivoMetadata> asyncMetadataProcessor() {
+    AsyncItemProcessor<SftpFileEntry, ArchivoMetadata> asyncProcessor = 
+        new AsyncItemProcessor<>(metadataExtractorProcessor);
+    asyncProcessor.setTaskExecutor(indexingTaskExecutor());
+    return asyncProcessor;
+}
+
+@Bean
+TaskExecutor indexingTaskExecutor() {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(batchProps.getThreadPoolSize());  // 20
+    executor.setMaxPoolSize(batchProps.getThreadPoolSize());
+    executor.setQueueCapacity(batchProps.getQueueCapacity());  // 1000
+    executor.initialize();
+    return executor;
+}
+```
 
 #### 3. **Bulk Upsert Strategy**
+
 ```mermaid
 sequenceDiagram
     participant Writer
@@ -260,7 +340,26 @@ sequenceDiagram
 - Con bulk: 3000-5000 docs/s (1 round-trip por chunk)
 - Para 11M archivos: ~30-60 minutos vs ~15-30 horas
 
+**Implementación:**
+```java
+public void write(Chunk<? extends ArchivoMetadata> chunk) {
+    BulkOperations bulkOps = mongoTemplate.bulkOps(
+        BulkOperations.BulkMode.UNORDERED,
+        DisorganizedFilesIndexDocument.class
+    );
+    
+    for (ArchivoMetadata metadata : chunk) {
+        Query query = new Query(Criteria.where("idUnico").is(metadata.getIdUnico()));
+        Update update = /* build update */;
+        bulkOps.upsert(query, update);
+    }
+    
+    BulkWriteResult result = bulkOps.execute();
+}
+```
+
 #### 4. **Connection Pool Lifecycle**
+
 ```mermaid
 stateDiagram-v2
     [*] --> Idle: Pool inicializado (lazy)
@@ -284,6 +383,123 @@ stateDiagram-v2
 - Lazy init: No conexiones al inicio
 - testOnBorrow: Detecta conexiones zombie
 - Eviction: Libera recursos automáticamente
+- Validación pre-uso con comando SFTP simple
+
+**Configuración:**
+```properties
+sftp.origin.pool.lazy-init=true
+sftp.origin.pool.initial-size=0
+sftp.origin.pool.max-size=10
+sftp.origin.pool.test-on-borrow=true
+sftp.origin.pool.time-between-eviction-runs-millis=60000
+sftp.origin.pool.min-evictable-idle-time-millis=300000
+```
+
+### Sistema de Auditoría
+
+#### Arquitectura de Auditoría
+
+```mermaid
+graph TB
+    subgraph "Spring Batch Metadata (PostgreSQL)"
+        PG_JOB[BATCH_JOB_EXECUTION<br/>Estado global]
+        PG_STEP[BATCH_STEP_EXECUTION<br/>Métricas técnicas]
+        PG_JOB --> PG_STEP
+    end
+    
+    subgraph "Auditoría de Negocio (MongoDB)"
+        MONGO_AUDIT[job_executions_audit<br/>Métricas + KPIs]
+    end
+    
+    subgraph "JobExecutionListener"
+        LISTENER[beforeJob/afterJob]
+    end
+    
+    LISTENER -->|Lee métricas| PG_STEP
+    LISTENER -->|Calcula KPIs| MONGO_AUDIT
+    
+    style PG_JOB fill:#87CEEB
+    style PG_STEP fill:#87CEEB
+    style MONGO_AUDIT fill:#90EE90
+```
+
+#### Datos Capturados en Auditoría
+
+**Información básica:**
+- `auditId`: ID único (jobName-jobExecutionId-uuid)
+- `jobExecutionId`: Referencia a Spring Batch
+- `serviceName`: Nombre del microservicio
+- `jobName`: Nombre del job (BATCH-INDEX-FULL)
+
+**Tiempos y duración:**
+- `startTime`: Fecha/hora de inicio
+- `endTime`: Fecha/hora de fin
+- `durationMs`: Duración en milisegundos
+- `durationFormatted`: Formato legible (ej: "29m 55s")
+
+**Estado y resultados:**
+- `status`: STARTED, COMPLETED, FAILED, STOPPED
+- `exitCode`: COMPLETED, FAILED, UNKNOWN
+- `exitDescription`: Descripción del resultado
+
+**Métricas de procesamiento:**
+- `totalFilesIndexed`: Total de archivos indexados (write_count)
+- `totalFilesProcessed`: Total procesados (read_count)
+- `totalFilesSkipped`: Total saltados (skips + filters)
+- `totalFilesFailed`: Total fallidos (write_skip + rollbacks)
+- `totalDirectoriesProcessed`: Directorios escaneados
+
+**Métricas de rendimiento:**
+- `readCount`, `writeCount`, `commitCount`, `rollbackCount`
+- `filesPerSecond`: Throughput calculado (⭐ único en auditoría)
+
+**Información de errores:**
+- `errorDescription`: Mensaje del error principal
+- `errorStackTrace`: Stack trace truncado (10 líneas)
+- `failureCount`: Número de fallos
+
+**Información del servidor:**
+- `hostname`: Host donde se ejecutó
+- `instanceId`: Pod de Kubernetes (si aplica)
+- `jobParameters`: Parámetros de entrada
+
+#### Comparación: Spring Batch vs Auditoría
+
+| Aspecto | Spring Batch (PostgreSQL) | Auditoría (MongoDB) |
+|---------|--------------------------|---------------------|
+| **Propósito** | Control técnico del framework | Métricas de negocio y BI |
+| **Usuario** | Spring Batch internamente | Dashboards, reportes, analistas |
+| **Queries** | JOINs complejos | Queries simples |
+| **Performance lectura** | Lento (múltiples tablas) | Rápido (documento único) |
+| **Datos únicos** | ExecutionContext, versioning | filesPerSecond, hostname, KPIs |
+| **Uso** | Restart jobs, recovery | Reportes, análisis, alertas |
+
+**Ejemplo de redundancia beneficiosa:**
+
+```javascript
+// ✅ Query simple en MongoDB (auditoría)
+db.job_executions_audit.find({
+  jobName: "BATCH-INDEX-FULL",
+  status: "COMPLETED",
+  filesPerSecond: { $gt: 5000 }
+}).sort({ startTime: -1 })
+
+// vs
+
+// ❌ Query compleja en PostgreSQL (Spring Batch)
+SELECT 
+    je.job_execution_id,
+    je.status,
+    se.write_count,
+    (se.write_count::float / EXTRACT(EPOCH FROM (je.end_time - je.start_time))) as files_per_second
+FROM batch_job_execution je
+JOIN batch_step_execution se ON je.job_execution_id = se.job_execution_id
+JOIN batch_job_instance ji ON je.job_instance_id = ji.job_instance_id
+WHERE ji.job_name = 'BATCH-INDEX-FULL'
+  AND je.status = 'COMPLETED'
+  AND (se.write_count::float / EXTRACT(EPOCH FROM (je.end_time - je.start_time))) > 5000
+ORDER BY je.start_time DESC;
+```
 
 ---
 
@@ -342,49 +558,56 @@ mvn license:format
 mvn license:check
 ```
 
-### Ejecución Local
+### Inicializar Base de Datos MongoDB
+
+**⚠️ IMPORTANTE:** Ejecutar el script de inicialización ANTES del primer despliegue.
 
 ```bash
-# Modo development (perfil dev por defecto)
-mvn spring-boot:run
+# Desarrollo (local con NodePort)
+mongo localhost:30000/dvsmart-ms \
+  -u dvsmart_user \
+  -p eoQQqfTyMd \
+  --authenticationDatabase dvsmart-ms \
+  scripts/mongodb/01_init_collections.js
 
-# O usando el JAR compilado
-java -jar target/dvsmart_indexing_api.jar
-
-# Con perfil prod
-java -jar target/dvsmart_indexing_api.jar --spring.profiles.active=prod
-
-# Sobreescribir propiedades
-java -jar target/dvsmart_indexing_api.jar \
-  --server.port=9090 \
-  --spring.mongodb.uri=mongodb://localhost:27017/test
+# Producción (cluster interno)
+mongo dvsmart-catalog-mongodb.dvsmart.svc.cluster.local:27017/dvsmart-ms \
+  -u dvsmart_user \
+  -p eoQQqfTyMd \
+  --authenticationDatabase dvsmart-ms \
+  scripts/mongodb/01_init_collections.js
 ```
 
-La aplicación estará disponible en:
-```
-http://localhost:8080/dvsmart_indexing_api
-```
+**El script crea:**
+- ✅ Colección `files_index` con validación de esquema y 7 índices
+- ✅ Colección `job_executions_audit` con validación de esquema y 9 índices
+- ✅ Documentos de ejemplo en ambas colecciones
+- ✅ Usuario de aplicación con permisos readWrite
 
-### Configuración de MongoDB
-
-**Crear usuario y base de datos:**
+**Verificar que todo está OK:**
 
 ```javascript
-// Conectar a MongoDB como admin
-mongo
+// Conectar a MongoDB
+mongo localhost:30000/dvsmart-ms -u dvsmart_user -p eoQQqfTyMd --authenticationDatabase dvsmart-ms
 
-// Crear usuario
-use dvsmart-ms
-db.createUser({
-  user: "dvsmart_user",
-  pwd: "eoQQqfTyMd",
-  roles: [
-    { role: "readWrite", db: "dvsmart-ms" }
-  ]
-})
+// Verificar colecciones
+show collections
+// Debe mostrar: files_index, job_executions_audit
 
-// Verificar conexión
-db.auth("dvsmart_user", "eoQQqfTyMd")
+// Verificar índices de files_index
+db.files_index.getIndexes().length
+// Debe retornar: 8 (incluyendo _id)
+
+// Verificar índices de job_executions_audit
+db.job_executions_audit.getIndexes().length
+// Debe retornar: 10 (incluyendo _id)
+
+// Verificar documentos de ejemplo
+db.files_index.countDocuments()
+// Debe retornar: 5
+
+db.job_executions_audit.countDocuments()
+// Debe retornar: 3
 ```
 
 ### Configuración de PostgreSQL
@@ -411,6 +634,23 @@ GRANT ALL PRIVILEGES ON DATABASE dvsmart TO dvsmart_ms;
 GRANT ALL ON SCHEMA public TO dvsmart_ms;
 ```
 
+**Verificar tablas de Spring Batch:**
+
+Después del primer arranque, Spring Batch creará automáticamente las siguientes tablas:
+
+```sql
+-- Verificar tablas creadas
+\dt
+
+-- Debe mostrar:
+-- BATCH_JOB_INSTANCE
+-- BATCH_JOB_EXECUTION
+-- BATCH_JOB_EXECUTION_PARAMS
+-- BATCH_STEP_EXECUTION
+-- BATCH_JOB_EXECUTION_CONTEXT
+-- BATCH_STEP_EXECUTION_CONTEXT
+```
+
 ### Configuración del Servidor SFTP
 
 **Verificar conectividad:**
@@ -424,6 +664,29 @@ ping sftp-host
 
 # Test de puerto
 telnet sftp-host 22
+```
+
+### Ejecución Local
+
+```bash
+# Modo development
+mvn spring-boot:run
+
+# O usando el JAR compilado
+java -jar target/dvsmart_indexing_api.jar
+
+# Con perfil prod
+java -jar target/dvsmart_indexing_api.jar --spring.profiles.active=prod
+
+# Sobreescribir propiedades
+java -jar target/dvsmart_indexing_api.jar \
+  --server.port=9090 \
+  --spring.mongodb.uri=mongodb://localhost:27017/test
+```
+
+La aplicación estará disponible en:
+```
+http://localhost:8080/dvsmart_indexing_api
 ```
 
 ---
@@ -444,29 +707,27 @@ server.shutdown=graceful
 
 | Propiedad | Valor | Descripción |
 |-----------|-------|-------------|
-| `spring.application.name` | `dvsmart-indexing-api` | Nombre de la aplicación |
+| `spring.application.name` | `dvsmart-indexing-api` | Nombre usado en auditoría |
 | `server.servlet.context-path` | `/dvsmart_indexing_api` | Context path base |
 | `server.port` | `8080` | Puerto HTTP |
-| `server.shutdown` | `graceful` | Shutdown suave (espera jobs activos) |
+| `server.shutdown` | `graceful` | Espera jobs activos antes de cerrar |
 
 #### MongoDB
 
 ```properties
 spring.mongodb.uri=mongodb://dvsmart_user:eoQQqfTyMd@localhost:30000/dvsmart-ms?authSource=dvsmart-ms
-```
 
-**Componentes de la URI:**
-- **Usuario:** `dvsmart_user`
-- **Password:** `eoQQqfTyMd` ⚠️ **Cambiar en producción**
-- **Host:** `localhost:30000` (ejemplo NodePort Kubernetes)
-- **Base de datos:** `dvsmart-ms`
-- **Auth source:** `dvsmart-ms`
+# ✅ CRÍTICO: Desactivar auto-creación de índices
+# Los índices se crean mediante script 01_init_collections.js
+spring.data.mongodb.auto-index-creation=false
+```
 
 **Colecciones utilizadas:**
 
-| Colección | Propósito | Índices |
-|-----------|-----------|---------|
-| `files_index` | Metadata de archivos | `idUnico` (unique) |
+| Colección | Propósito | Índices | Documentos ejemplo |
+|-----------|-----------|---------|-------------------|
+| `files_index` | Metadata de archivos indexados | 8 índices (1 único, 7 búsqueda) | 5 |
+| `job_executions_audit` | Auditoría de ejecuciones | 10 índices (2 únicos, 8 búsqueda) | 3 |
 
 #### PostgreSQL (Spring Batch Repository)
 
@@ -479,21 +740,13 @@ spring.datasource.hikari.maximum-pool-size=10
 spring.datasource.hikari.minimum-idle=5
 ```
 
-| Propiedad | Valor | Descripción |
-|-----------|-------|-------------|
-| `spring.datasource.url` | `jdbc:postgresql://localhost:30005/dvsmart` | URL de conexión |
-| `spring.datasource.username` | `dvsmart_ms` | Usuario PostgreSQL |
-| `spring.datasource.password` | `OgxjdNEeQl` | Password ⚠️ **Usar secrets** |
-| `hikari.maximum-pool-size` | `10` | Pool máximo de conexiones |
-| `hikari.minimum-idle` | `5` | Conexiones idle mínimas |
-
-**Tablas utilizadas por Spring Batch:**
+**Tablas de Spring Batch (creadas automáticamente):**
 
 | Tabla | Propósito |
 |-------|-----------|
 | `BATCH_JOB_INSTANCE` | Instancias de jobs |
 | `BATCH_JOB_EXECUTION` | Ejecuciones de jobs |
-| `BATCH_STEP_EXECUTION` | Ejecuciones de steps |
+| `BATCH_STEP_EXECUTION` | Ejecuciones de steps (⭐ métricas detalladas) |
 | `BATCH_JOB_EXECUTION_PARAMS` | Parámetros de ejecución |
 
 #### Spring Batch
@@ -507,8 +760,6 @@ spring.batch.jdbc.initialize-schema=always
 |-----------|-------|-------------|
 | `spring.batch.job.enabled` | `false` | ⚠️ **CRÍTICO:** Desactiva inicio automático |
 | `spring.batch.jdbc.initialize-schema` | `always` | Crea tablas al inicio |
-
-⚠️ **IMPORTANTE:** `job.enabled=false` evita que los jobs se ejecuten automáticamente al arrancar. Los jobs se lanzan manualmente vía API REST.
 
 #### Configuración del Batch (Prefijo: `batch.*`)
 
@@ -558,15 +809,6 @@ sftp.origin.base-dir=/disorganized_data
 sftp.origin.timeout=30000
 ```
 
-| Propiedad | Valor | Descripción |
-|-----------|-------|-------------|
-| `sftp.origin.host` | `localhost` | Hostname o IP del servidor |
-| `sftp.origin.port` | `30002` | Puerto SSH (NodePort ejemplo) |
-| `sftp.origin.user` | `sftpsourceuser` | Usuario SFTP |
-| `sftp.origin.password` | `securepass` | Password ⚠️ **Usar Secrets en prod** |
-| `sftp.origin.base-dir` | `/disorganized_data` | Directorio raíz a indexar |
-| `sftp.origin.timeout` | `30000` | Timeout conexión (ms) |
-
 #### Pool de Conexiones SFTP (Prefijo: `sftp.origin.pool.*`)
 
 ```properties
@@ -589,33 +831,10 @@ sftp.origin.pool.min-evictable-idle-time-millis=300000
 | Propiedad | Valor | Descripción |
 |-----------|-------|-------------|
 | `lazy-init` | `true` | No crear conexiones al inicio |
-| `initial-size` | `0` | Pool completamente lazy (0 = bajo demanda) |
+| `initial-size` | `0` | Pool completamente lazy |
 | `max-size` | `10` | Tamaño máximo del pool |
-| `size` | `10` | Alias de max-size |
-| `max-wait-millis` | `30000` | Tiempo máximo espera por conexión |
 | `test-on-borrow` | `true` | **CRÍTICO:** Validar antes de usar |
-| `test-while-idle` | `true` | Validar conexiones idle |
-| `time-between-eviction-runs-millis` | `60000` | Frecuencia de limpieza (60s) |
-| `min-evictable-idle-time-millis` | `300000` | Tiempo idle antes de cerrar (5 min) |
-
-⚠️ **IMPORTANTE:** `min-evictable-idle-time` debe ser **menor** que el timeout del servidor SFTP para evitar conexiones "zombie".
-
-**Escenarios de configuración:**
-
-```properties
-# 🔹 SERVIDOR SFTP CON POCOS RECURSOS
-sftp.origin.pool.max-size=3
-sftp.origin.pool.min-evictable-idle-time-millis=120000  # 2 min
-
-# 🔹 SERVIDOR SFTP DEDICADO
-sftp.origin.pool.max-size=10
-sftp.origin.pool.min-evictable-idle-time-millis=300000  # 5 min
-
-# 🔹 ALTO TRÁFICO (múltiples APIs)
-sftp.origin.pool.max-size=5
-sftp.origin.pool.max-wait-millis=60000
-sftp.origin.pool.min-evictable-idle-time-millis=180000  # 3 min
-```
+| `min-evictable-idle-time-millis` | `300000` | 5 min idle antes de cerrar |
 
 #### Logging
 
@@ -631,18 +850,6 @@ logging.level.org.springframework.data.mongodb=INFO
 
 # Patrón
 logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n
-```
-
-**Por entorno:**
-
-```properties
-# 🔹 DESARROLLO
-logging.level.com.indra.minsait.dvsmart.indexing=TRACE
-logging.level.org.springframework.batch=DEBUG
-
-# 🔹 PRODUCCIÓN
-logging.level.com.indra.minsait.dvsmart.indexing=INFO
-logging.level.org.springframework.batch=WARN
 ```
 
 #### Actuator (Monitorización)
@@ -676,19 +883,13 @@ java $JAVA_OPTS -jar target/dvsmart_indexing_api.jar
 | `-Xmx8g` | Heap máximo 8GB | Suficiente para 11M archivos |
 | `-XX:+UseG1GC` | G1 GC | Baja latencia |
 | `-XX:MaxGCPauseMillis=200` | Pausas < 200ms | Reduce impacto del GC |
-| `-XX:ParallelGCThreads=4` | 4 threads GC | Ajustar según CPU |
 
 ### Tuning de Spring Batch (11M archivos)
 
 ```properties
-# Chunks grandes = menos commits
 batch.chunk-size=500
-
-# Máximo paralelismo
 batch.thread-pool-size=50
 batch.queue-capacity=5000
-
-# Pool SFTP suficiente
 sftp.origin.pool.max-size=10
 ```
 
@@ -706,48 +907,22 @@ Tiempo: (22,000 / 50) * 2s = 880s ≈ 15 minutos
 
 ### Tuning de MongoDB
 
-**Índices óptimos:**
+**Índices ya creados por script:**
 
 ```javascript
-// Índice único (crítico para upserts)
-db.getCollection("files_index").createIndex(
-  { "idUnico": 1 },
-  { unique: true, background: false }
-)
-
-// Índice para consultas por ruta
-db.getCollection("files_index").createIndex(
-  { "sourcePath": 1, "indexing_indexedAt": -1 },
-  { background: true }
-)
-
-// Índice para búsquedas por extensión
-db.getCollection("files_index").createIndex(
-  { "extension": 1, "fileSize": -1 },
-  { background: true }
-)
-
-// Índice para estado de indexación
-db.getCollection("files_index").createIndex(
-  { "indexing_status": 1 },
-  { background: true }
-)
+// ✅ Ya están en 01_init_collections.js
+// files_index: 8 índices
+// job_executions_audit: 10 índices
 ```
 
 **Write concern para alto throughput:**
 
 ```properties
 # Agregar a URI
-spring.mongodb.uri=mongodb://user:pass@host:27017/db?w=1&journal=false&maxPoolSize=100
+spring.mongodb.uri=mongodb://user:pass@host:27017/db?w=1&maxPoolSize=100
 ```
 
-- `w=1`: Esperar confirmación del primario
-- `journal=false`: No esperar flush a disco (⚠️ riesgo de pérdida en crash)
-- `maxPoolSize=100`: Pool grande para escrituras masivas
-
 ### Tuning de PostgreSQL
-
-**Configuración para Spring Batch:**
 
 ```sql
 -- Aumentar shared_buffers para cache
@@ -758,23 +933,9 @@ ALTER SYSTEM SET work_mem = '64MB';
 
 -- Checkpoint menos frecuentes
 ALTER SYSTEM SET checkpoint_timeout = '30min';
-ALTER SYSTEM SET checkpoint_completion_target = 0.9;
 
 -- Aplicar cambios
 SELECT pg_reload_conf();
-```
-
-**Índices en tablas de Batch:**
-
-```sql
--- Índice para búsquedas por nombre de job
-CREATE INDEX idx_job_inst_job_name ON BATCH_JOB_INSTANCE(JOB_NAME);
-
--- Índice para búsquedas por estado
-CREATE INDEX idx_job_exec_status ON BATCH_JOB_EXECUTION(STATUS);
-
--- Índice para job execution params
-CREATE INDEX idx_job_exec_params_job_exec_id ON BATCH_JOB_EXECUTION_PARAMS(JOB_EXECUTION_ID);
 ```
 
 ---
@@ -795,17 +956,6 @@ Content-Type: application/json
 }
 ```
 
-**Request Body:**
-
-```json
-{
-  "jobName": "BATCH-INDEX-FULL",
-  "parameters": {
-    "customParam": "value"
-  }
-}
-```
-
 **Response (202 Accepted):**
 
 ```json
@@ -823,24 +973,118 @@ Content-Type: application/json
 curl -X POST http://localhost:8080/dvsmart_indexing_api/api/batch/index/full \
   -H "Content-Type: application/json" \
   -d '{"jobName":"BATCH-INDEX-FULL","parameters":{}}'
-
-# Remoto
-curl -X POST https://api.example.com/dvsmart_indexing_api/api/batch/index/full \
-  -H "Content-Type: application/json" \
-  -d '{"jobName":"BATCH-INDEX-FULL","parameters":{}}'
 ```
 
-**Códigos de estado:**
+### Endpoints de Auditoría
 
-| Código | Significado | Acción |
-|--------|-------------|--------|
-| `202` | Job lanzado | Monitorear logs |
-| `400` | Request inválido | Verificar JSON |
-| `500` | Error interno | Revisar logs |
+#### 📊 Historial de Auditoría de un Job
 
-### Endpoints de Monitorización
+```http
+GET /dvsmart_indexing_api/api/monitoring/audit/jobs/{jobName}
+```
 
-#### 🟢 Estadísticas Básicas del Pool SFTP
+**Ejemplo:**
+
+```bash
+curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/jobs/BATCH-INDEX-FULL | jq
+```
+
+**Response:**
+
+```json
+[
+  {
+    "id": "676b1234567890abcdef1234",
+    "auditId": "BATCH-INDEX-FULL-12345-a1b2c3d4",
+    "jobExecutionId": 12345,
+    "serviceName": "dvsmart-indexing-api",
+    "jobName": "BATCH-INDEX-FULL",
+    "startTime": "2025-12-26T10:00:00Z",
+    "endTime": "2025-12-26T10:30:00Z",
+    "durationMs": 1800000,
+    "durationFormatted": "30m 0s",
+    "status": "COMPLETED",
+    "exitCode": "COMPLETED",
+    "totalFilesIndexed": 11000000,
+    "totalFilesProcessed": 11050000,
+    "totalFilesSkipped": 50000,
+    "totalFilesFailed": 0,
+    "filesPerSecond": 6111.11,
+    "hostname": "indexing-api-pod-abc123",
+    "instanceId": "indexing-api-pod-abc123"
+  }
+]
+```
+
+#### 📊 Ejecuciones por Estado
+
+```http
+GET /dvsmart_indexing_api/api/monitoring/audit/status/{status}
+```
+
+**Ejemplos:**
+
+```bash
+# Ejecuciones completadas
+curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/status/COMPLETED | jq
+
+# Ejecuciones fallidas
+curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/status/FAILED | jq
+
+# Ejecuciones en curso
+curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/status/STARTED | jq
+```
+
+#### 📊 Detalle de una Ejecución
+
+```http
+GET /dvsmart_indexing_api/api/monitoring/audit/execution/{jobExecutionId}
+```
+
+**Ejemplo:**
+
+```bash
+curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/execution/12345 | jq
+```
+
+#### 📊 Estadísticas Globales de Auditoría
+
+```http
+GET /dvsmart_indexing_api/api/monitoring/audit/stats
+```
+
+**Response:**
+
+```json
+{
+  "totalExecutions": 150,
+  "completedExecutions": 140,
+  "failedExecutions": 8,
+  "startedExecutions": 2
+}
+```
+
+#### 📊 Últimas Ejecuciones
+
+```http
+GET /dvsmart_indexing_api/api/monitoring/audit/latest
+```
+
+#### 📊 Ejecuciones en Rango de Fechas
+
+```http
+GET /dvsmart_indexing_api/api/monitoring/audit/range?start={ISO_DATE}&end={ISO_DATE}
+```
+
+**Ejemplo:**
+
+```bash
+curl "http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/range?start=2025-12-01T00:00:00Z&end=2025-12-31T23:59:59Z" | jq
+```
+
+### Endpoints de Monitorización SFTP Pool
+
+#### 🟢 Estadísticas Básicas del Pool
 
 ```http
 GET /dvsmart_indexing_api/api/monitoring/sftp-pool
@@ -860,49 +1104,10 @@ GET /dvsmart_indexing_api/api/monitoring/sftp-pool
 }
 ```
 
-#### 🟢 Estadísticas Extendidas
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/sftp-pool/extended
-```
-
-**Response:**
-
-```json
-{
-  "active": 2,
-  "idle": 3,
-  "maxTotal": 10,
-  "totalCreated": 5,
-  "totalDestroyed": 0,
-  "totalBorrows": 12543,
-  "totalReturns": 12541,
-  "totalFailures": 2,
-  "utilizationPercent": 20.0,
-  "lastLogTime": "2025-12-24T10:30:00Z"
-}
-```
-
 #### 🟢 Health Check del Pool
 
 ```http
 GET /dvsmart_indexing_api/api/monitoring/sftp-pool/health
-```
-
-**Response:**
-
-```json
-{
-  "status": "HEALTHY",
-  "healthy": true,
-  "details": {
-    "active": 2,
-    "idle": 3,
-    "utilizationPercent": 20.0,
-    "totalFailures": 0,
-    "totalBorrows": 12543
-  }
-}
 ```
 
 **Estados:**
@@ -914,287 +1119,19 @@ GET /dvsmart_indexing_api/api/monitoring/sftp-pool/health
 | `DEGRADED` | failures > 10% | Revisar SFTP |
 | `CRITICAL` | utilization > 95% | Urgente |
 
-#### 🟡 Operaciones de Mantenimiento
-
-```bash
-# Forzar eviction
-POST /api/monitoring/sftp-pool/evict
-
-# Reset contadores
-POST /api/monitoring/sftp-pool/reset
-
-# Log manual
-POST /api/monitoring/sftp-pool/log
-```
-
 ### Endpoints de Batch Jobs
 
-#### 🔍 Listar Todos los Jobs
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/jobs
-```
-
-**Response:**
-
-```json
-{
-  "jobNames": ["BATCH-INDEX-FULL"],
-  "totalJobs": 1
-}
-```
-
-#### 🔍 Jobs en Ejecución
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/jobs/running
-```
-
-**Response:**
-
-```json
-{
-  "runningJobs": [
-    {
-      "executionId": 12345,
-      "jobName": "BATCH-INDEX-FULL",
-      "status": "STARTED",
-      "startTime": "2025-12-24T10:00:00",
-      "duration": "15m 30s"
-    }
-  ],
-  "count": 1
-}
-```
-
-#### 🔍 Últimas Ejecuciones
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/jobs/latest
-```
-
-#### 🔍 Historial de un Job
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/jobs/{jobName}?page=0&size=10
-```
-
-#### 🔍 Detalle de una Ejecución
+#### 🔍 Detalle de una Ejecución (Spring Batch)
 
 ```http
 GET /dvsmart_indexing_api/api/monitoring/jobs/execution/{executionId}
 ```
 
-**Response:**
-
-```json
-{
-  "executionId": 12345,
-  "jobName": "BATCH-INDEX-FULL",
-  "status": "COMPLETED",
-  "createTime": "2025-12-24T10:00:00",
-  "startTime": "2025-12-24T10:00:05",
-  "endTime": "2025-12-24T10:30:00",
-  "duration": "29m 55s",
-  "exitCode": "COMPLETED",
-  "exitDescription": null,
-  "parameters": {
-    "timestamp": "2025-12-24T10:00:00"
-  },
-  "steps": [
-    {
-      "stepName": "indexingStep",
-      "status": "COMPLETED",
-      "readCount": 11000000,
-      "writeCount": 11000000,
-      "commitCount": 110000,
-      "rollbackCount": 0,
-      "readSkipCount": 0,
-      "processSkipCount": 0,
-      "writeSkipCount": 0,
-      "filterCount": 50000,
-      "startTime": "2025-12-24T10:00:05",
-      "endTime": "2025-12-24T10:30:00",
-      "duration": "29m 55s",
-      "exitCode": "COMPLETED"
-    }
-  ]
-}
-```
-
-#### 🔍 Estadísticas Globales
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/jobs/stats
-```
-
-#### 🔍 Health Check Global
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/health
-```
-
-**Response:**
-
-```json
-{
-  "status": "UP",
-  "components": {
-    "sftp": {
-      "status": "HEALTHY",
-      "active": 2,
-      "available": 8
-    },
-    "batch": {
-      "status": "RUNNING",
-      "runningJobs": 1
-    }
-  }
-}
-```
-
----
-
-## ⚙️ Arquitectura del Batch Job
-
-### Fases del Procesamiento
-
-```mermaid
-stateDiagram-v2
-    [*] --> Discovery: POST /api/batch/index/full
-    Discovery --> Indexing: Queue lista
-    Indexing --> Completed: Archivos procesados
-    Completed --> [*]
-    
-    Discovery --> Failed: Error
-    Indexing --> Failed: Error
-    Failed --> [*]
-```
-
-### Componentes Principales
-
-#### 1. DirectoryQueueItemReader
-
-**Responsabilidad:** Lectura secuencial de archivos directorio por directorio.
-
-**Características:**
-- **Lazy Discovery:** Escaneo solo en primera llamada a `read()`
-- **Memoria eficiente:** Solo archivos del directorio actual en memoria
-- **Pool Lazy:** Usa 1-2 conexiones SFTP típicamente
-- **ItemStream:** Control de ciclo de vida (`open`, `update`, `close`)
-
-**Flujo:**
-
-```java
-public SftpFileEntry read() {
-    // Primera llamada: discovery completo
-    if (!discoveryCompleted) {
-        executeDirectoryDiscovery();  // BFS recursivo
-        discoveryCompleted = true;
-    }
-    
-    // Retornar archivos del directorio actual
-    if (!currentDirectoryFiles.isEmpty()) {
-        return currentDirectoryFiles.poll();
-    }
-    
-    // Si no hay más directorios, terminar
-    if (directoryQueue.isEmpty()) {
-        return null;
-    }
-    
-    // Cargar siguiente directorio
-    loadDirectoryFiles(directoryQueue.poll());
-    return read();
-}
-```
-
-**Estadísticas:**
-- Log cada 100 directorios procesados
-- Total de archivos y directorios al finalizar
-
-#### 2. MetadataExtractorProcessor
-
-**Responsabilidad:** Transformar `SftpFileEntry` → `ArchivoMetadata`.
-
-**Características:**
-- **Sin I/O:** Procesamiento en memoria
-- **Paralelo:** 20 threads (configurable)
-- **Filtros:** Directorios, ocultos, temporales
-- **Error handling:** Crea metadata con estado FAILED en caso de error
-
-```java
-public ArchivoMetadata process(SftpFileEntry entry) {
-    // Filtros
-    if (entry.isDirectory() || entry.getFilename().startsWith(".")) {
-        return null;  // Skip
-    }
-    
-    try {
-        return metadataService.toMetadata(entry);
-    } catch (Exception e) {
-        return createFailedMetadata(entry, e);
-    }
-}
-```
-
-**Archivos filtrados:**
-- Directorios
-- Archivos ocultos (`.file`)
-- Temporales (`.tmp`, `.temp`, `.bak`, `~`, `~$`)
-- Fuera de rango de tamaño (configurable)
-
-#### 3. BulkUpsertMongoItemWriter
-
-**Responsabilidad:** Persistencia masiva en MongoDB.
-
-**Performance:**
-- Sin bulk: 100-200 docs/s
-- Con bulk: 3000-5000 docs/s
-
-```java
-public void write(Chunk<? extends ArchivoMetadata> chunk) {
-    BulkOperations bulkOps = mongoTemplate.bulkOps(
-        BulkOperations.BulkMode.UNORDERED,
-        DisorganizedFilesIndexDocument.class
-    );
-    
-    for (ArchivoMetadata metadata : chunk) {
-        Query query = new Query(Criteria.where("idUnico").is(metadata.getIdUnico()));
-        Update update = /* ... */;
-        bulkOps.upsert(query, update);
-    }
-    
-    BulkWriteResult result = bulkOps.execute();
-}
-```
-
-**Métricas:**
-- Conteo de inserciones/actualizaciones
-- Conteo de éxitos/fallos
-- Alerta si tasa de error > 5%
-
-#### 4. CustomLazySftpSessionFactory
-
-**Responsabilidad:** Gestión del pool de conexiones SFTP.
-
-**Características:**
-- Pool lazy con Apache Commons Pool2
-- Validación pre-uso (`testOnBorrow`)
-- Eviction automática de idle sessions
-- Wrapper para devolución automática al pool
-
-**Configuración:**
-
-```java
-GenericObjectPoolConfig<Session<SftpClient.DirEntry>> config = new GenericObjectPoolConfig<>();
-config.setMaxTotal(maxPoolSize);
-config.setMaxIdle(maxPoolSize);
-config.setMinIdle(0);  // No mantener mínimas
-config.setLifo(true);  // LIFO para reusar recientes
-config.setTestOnBorrow(testOnBorrow);
-config.setTestWhileIdle(true);
-```
+**Response incluye:**
+- Estado del job
+- Métricas de todos los steps
+- Parámetros de entrada
+- Tiempos de ejecución
 
 ---
 
@@ -1204,90 +1141,96 @@ config.setTestWhileIdle(true);
 
 ```bash
 # Health general
-curl http://localhost:8080/dvsmart_indexing_api/actuator/health
-
-# Detalle (incluye MongoDB y PostgreSQL)
 curl http://localhost:8080/dvsmart_indexing_api/actuator/health | jq
+
+# Debe mostrar:
+# - MongoDB: UP
+# - PostgreSQL: UP
+# - diskSpace: UP
 ```
 
-**Response:**
+### Métricas Disponibles
 
-```json
-{
-  "status": "UP",
-  "components": {
-    "db": {
-      "status": "UP",
-      "details": {
-        "database": "PostgreSQL",
-        "validationQuery": "isValid()"
-      }
-    },
-    "mongo": {
-      "status": "UP",
-      "details": {
-        "version": "5.0.0"
-      }
-    }
-  }
-}
-```
-
-### Métricas del Pool SFTP
-
-| Métrica | Tipo | Descripción |
-|---------|------|-------------|
-| `active` | Gauge | Conexiones en uso |
-| `idle` | Gauge | Conexiones disponibles |
-| `utilizationPercent` | Gauge | % utilización |
-| `totalBorrows` | Counter | Total adquisiciones |
-| `totalFailures` | Counter | Total fallos |
-| `totalCreated` | Counter | Total creadas |
-| `totalDestroyed` | Counter | Total destruidas |
+| Fuente | Métricas | Propósito |
+|--------|----------|-----------|
+| **PostgreSQL** | read_count, write_count, commit_count | Control técnico de Spring Batch |
+| **MongoDB (auditoría)** | filesPerSecond, throughput, KPIs | Dashboards y reportes de negocio |
+| **Pool SFTP** | active, idle, utilization | Monitoreo de recursos |
 
 ### Logs Estructurados
 
 **Ejemplo de log completo:**
 
 ```
-2025-12-24 10:00:00 - Starting FULL INDEXING JOB
-2025-12-24 10:00:01 - ========================================
-2025-12-24 10:00:01 - 🔄 OPEN: Initializing DirectoryQueueItemReader
-2025-12-24 10:00:01 - Base directory: /disorganized_data
-2025-12-24 10:00:01 - ========================================
-2025-12-24 10:00:02 - ========================================
-2025-12-24 10:00:02 - PHASE 1: DIRECTORY DISCOVERY
-2025-12-24 10:00:02 - Base directory: /disorganized_data
-2025-12-24 10:00:02 - ========================================
-2025-12-24 10:00:25 - ========================================
-2025-12-24 10:00:25 - ✅ Discovery completed in 23000 ms (23 seconds)
-2025-12-24 10:00:25 - Total directories to process: 8543
-2025-12-24 10:00:25 - ========================================
-2025-12-24 10:00:25 - PHASE 2: FILE INDEXING
-2025-12-24 10:00:25 - ========================================
-2025-12-24 10:00:32 - Bulk write completed: 100 inserted, 0 updated | Success: 100, Failed: 0
-2025-12-24 10:05:00 - 📊 Progress: 100 directories processed, 12500 files indexed
-2025-12-24 10:29:30 - ========================================
-2025-12-24 10:29:30 - ✅ INDEXING COMPLETED
-2025-12-24 10:29:30 - Total files indexed: 11000000
-2025-12-24 10:29:30 - Total directories processed: 8543
-2025-12-24 10:29:30 - ========================================
+2025-12-26 10:00:00 - Starting FULL INDEXING JOB
+2025-12-26 10:00:00 - ════════════════════════════════════════════════════════
+2025-12-26 10:00:00 - 📋 AUDIT: Creating audit record for job execution
+2025-12-26 10:00:00 -    Job Name: BATCH-INDEX-FULL
+2025-12-26 10:00:00 -    Execution ID: 12345
+2025-12-26 10:00:00 - ════════════════════════════════════════════════════════
+2025-12-26 10:00:00 - ✅ Audit record created: auditId=BATCH-INDEX-FULL-12345-a1b2c3d4, jobExecutionId=12345
+2025-12-26 10:00:01 - ════════════════════════════════════════════════════════
+2025-12-26 10:00:01 - 🔄 OPEN: Initializing DirectoryQueueItemReader
+2025-12-26 10:00:01 - Base directory: /disorganized_data
+2025-12-26 10:00:01 - ════════════════════════════════════════════════════════
+2025-12-26 10:00:02 - PHASE 1: DIRECTORY DISCOVERY
+2025-12-26 10:00:25 - ✅ Discovery completed in 23000 ms (23 seconds)
+2025-12-26 10:00:25 - Total directories to process: 8543
+2025-12-26 10:00:25 - PHASE 2: FILE INDEXING
+2025-12-26 10:00:32 - Bulk write completed: 100 inserted, 0 updated | Success: 100, Failed: 0
+2025-12-26 10:05:00 - 📊 Progress: 100 directories processed, 12500 files indexed
+2025-12-26 10:29:30 - ✅ INDEXING COMPLETED
+2025-12-26 10:29:30 - Total files indexed: 11000000
+2025-12-26 10:29:30 - Total directories processed: 8543
+2025-12-26 10:29:30 - ════════════════════════════════════════════════════════
+2025-12-26 10:29:30 - 📋 AUDIT: Updating audit record for job execution
+2025-12-26 10:29:30 -    Status: COMPLETED
+2025-12-26 10:29:30 - ✅ Audit record updated: auditId=BATCH-INDEX-FULL-12345-a1b2c3d4, status=COMPLETED, filesIndexed=11000000, duration=30m 0s
 ```
 
-### Logs Periódicos del Pool
+### Consultas Útiles en MongoDB
 
-```
-2025-12-24 10:15:00 - ╔════════════════════════════════════════════════════╗
-2025-12-24 10:15:00 - ║         SFTP POOL STATISTICS                       ║
-2025-12-24 10:15:00 - ╠════════════════════════════════════════════════════╣
-2025-12-24 10:15:00 - ║ Active Connections:         2                      ║
-2025-12-24 10:15:00 - ║ Idle Connections:           3                      ║
-2025-12-24 10:15:00 - ║ Max Pool Size:             10                      ║
-2025-12-24 10:15:00 - ║ Total Created:              5                      ║
-2025-12-24 10:15:00 - ║ Total Destroyed:            0                      ║
-2025-12-24 10:15:00 - ║ Utilization:              20.0%                    ║
-2025-12-24 10:15:00 - ║ Available Slots:            8                      ║
-2025-12-24 10:15:00 - ╚════════════════════════════════════════════════════╝
+```javascript
+// Top 10 ejecuciones más rápidas
+db.job_executions_audit.find({
+  status: "COMPLETED"
+}).sort({ filesPerSecond: -1 }).limit(10)
+
+// Ejecuciones con más de 10M archivos
+db.job_executions_audit.find({
+  totalFilesIndexed: { $gt: 10000000 }
+})
+
+// Promedio de throughput
+db.job_executions_audit.aggregate([
+  { $match: { status: "COMPLETED" } },
+  { $group: {
+      _id: null,
+      avgThroughput: { $avg: "$filesPerSecond" },
+      maxThroughput: { $max: "$filesPerSecond" },
+      minThroughput: { $min: "$filesPerSecond" }
+  }}
+])
+
+// Ejecuciones por día (últimos 30 días)
+db.job_executions_audit.aggregate([
+  {
+    $match: {
+      startTime: {
+        $gte: new Date(new Date().setDate(new Date().getDate() - 30))
+      }
+    }
+  },
+  {
+    $group: {
+      _id: { $dateToString: { format: "%Y-%m-%d", date: "$startTime" } },
+      count: { $sum: 1 },
+      avgDuration: { $avg: "$durationMs" },
+      totalFiles: { $sum: "$totalFilesIndexed" }
+    }
+  },
+  { $sort: { _id: 1 } }
+])
 ```
 
 ---
@@ -1298,14 +1241,12 @@ curl http://localhost:8080/dvsmart_indexing_api/actuator/health | jq
 
 | Error | Causa | Solución |
 |-------|-------|----------|
-| `Could not obtain SFTP session` | Pool saturado | Aumentar `pool.max-size` o `max-wait-millis` |
+| `Could not obtain SFTP session` | Pool saturado | Aumentar `pool.max-size` |
 | `Connection reset by peer` | Servidor cerró idle | Reducir `min-evictable-idle-time-millis` |
 | `Auth fail` | Credenciales incorrectas | Verificar `user` y `password` |
-| `OutOfMemoryError` | Heap insuficiente | Aumentar `-Xmx` o reducir `thread-pool-size` |
-| `E11000 duplicate key` | Índice violado | Verificar duplicados o `db.collection.reIndex()` |
-| `Connection to MongoDB refused` | MongoDB caído | Verificar servicio y URI |
-| `Connection to PostgreSQL refused` | PostgreSQL caído | Verificar servicio y URL |
-| `Job already running` | Ejecución concurrente | Esperar o revisar estado en PostgreSQL |
+| `OutOfMemoryError` | Heap insuficiente | Aumentar `-Xmx` |
+| `E11000 duplicate key` | Índice violado | `db.collection.reIndex()` |
+| `Audit record not found` | Job no registrado | Verificar listener configurado |
 
 ### Comandos de Diagnóstico
 
@@ -1313,70 +1254,39 @@ curl http://localhost:8080/dvsmart_indexing_api/actuator/health | jq
 # Verificar conectividad SFTP
 telnet sftp-host 22
 
-# Test de autenticación SFTP
-sftp sftpsourceuser@sftp-host
-
 # Verificar MongoDB
-mongo --host localhost --port 30000 -u dvsmart_user -p eoQQqfTyMd --authenticationDatabase dvsmart-ms
+mongo localhost:30000/dvsmart-ms -u dvsmart_user -p eoQQqfTyMd --authenticationDatabase dvsmart-ms
 
 # Verificar PostgreSQL
 psql -h localhost -p 30005 -U dvsmart_ms -d dvsmart
 
-# Verificar logs de la aplicación
-tail -f logs/application.log
-
 # Verificar jobs en ejecución
 curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/jobs/running | jq
 
-# Verificar pool SFTP
-curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/sftp-pool/health | jq
+# Verificar última auditoría
+curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/latest | jq
 ```
 
-### Diagnóstico de Pool SFTP
+### Diagnóstico de Auditoría
 
-```bash
-# Estado del pool
-curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/sftp-pool
+```javascript
+// Conectar a MongoDB
+mongo localhost:30000/dvsmart-ms -u dvsmart_user -p eoQQqfTyMd --authenticationDatabase dvsmart-ms
 
-# Si está saturado
-curl -X POST http://localhost:8080/dvsmart_indexing_api/api/monitoring/sftp-pool/evict
+// Verificar registros de auditoría
+db.job_executions_audit.find().sort({ startTime: -1 }).limit(5).pretty()
 
-# Logs detallados
-curl -X POST http://localhost:8080/dvsmart_indexing_api/api/monitoring/sftp-pool/log
-```
+// Verificar ejecuciones sin finalizar
+db.job_executions_audit.find({
+  status: "STARTED",
+  startTime: { $lt: new Date(Date.now() - 3600000) }  // Más de 1 hora
+})
 
-### Diagnóstico de Jobs
-
-```bash
-# Ver ejecución específica
-curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/jobs/execution/{id} | jq
-
-# Ver historial
-curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/jobs/BATCH-INDEX-FULL | jq
-
-# Estadísticas globales
-curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/jobs/stats | jq
-```
-
-### Limpieza de Jobs Huérfanos
-
-```sql
--- Conectar a PostgreSQL
-psql -h localhost -p 30005 -U dvsmart_ms -d dvsmart
-
--- Ver jobs STARTED antiguos (posibles huérfanos)
-SELECT job_execution_id, job_instance_id, start_time, status
-FROM BATCH_JOB_EXECUTION
-WHERE status = 'STARTED'
-  AND start_time < NOW() - INTERVAL '1 hour';
-
--- Marcar como FAILED (si es necesario)
-UPDATE BATCH_JOB_EXECUTION
-SET status = 'FAILED',
-    end_time = NOW(),
-    exit_code = 'FAILED',
-    exit_message = 'Marcado como FAILED manualmente'
-WHERE job_execution_id = {id};
+// Verificar ejecuciones fallidas recientes
+db.job_executions_audit.find({
+  status: "FAILED",
+  startTime: { $gte: new Date(Date.now() - 86400000) }  // Últimas 24h
+}).sort({ startTime: -1 })
 ```
 
 ---
@@ -1390,20 +1300,10 @@ WHERE job_execution_id = {id};
 mvn test
 
 # Ejecutar un test específico
-mvn test -Dtest=FileMetadataServiceTest
+mvn test -Dtest=JobAuditServiceTest
 
 # Tests con cobertura
 mvn clean test jacoco:report
-```
-
-### Tests de Integración
-
-```bash
-# Tests de integración (requiere MongoDB y PostgreSQL corriendo)
-mvn verify
-
-# Skip tests de integración
-mvn verify -DskipITs
 ```
 
 ### Limpieza de Datos
@@ -1411,29 +1311,24 @@ mvn verify -DskipITs
 **MongoDB:**
 
 ```javascript
-// Conectar a MongoDB
-mongo --host localhost --port 30000 -u dvsmart_user -p eoQQqfTyMd --authenticationDatabase dvsmart-ms
+// Eliminar auditorías antiguas (más de 90 días)
+db.job_executions_audit.deleteMany({
+  createdAt: { $lt: new Date(Date.now() - 90*24*60*60*1000) }
+})
 
-// Eliminar todos los documentos
-use dvsmart-ms
-db.files_index.deleteMany({})
+// Eliminar solo ejecuciones fallidas antiguas
+db.job_executions_audit.deleteMany({
+  status: "FAILED",
+  createdAt: { $lt: new Date(Date.now() - 30*24*60*60*1000) }
+})
 
-// Eliminar documentos con errores
-db.files_index.deleteMany({ "indexing_status": "FAILED" })
-
-// Contar documentos
-db.files_index.countDocuments()
-
-// Verificar índices
-db.files_index.getIndexes()
+// Verificar espacio usado
+db.job_executions_audit.stats()
 ```
 
 **PostgreSQL:**
 
 ```sql
--- Conectar a PostgreSQL
-psql -h localhost -p 30005 -U dvsmart_ms -d dvsmart
-
 -- Limpiar jobs antiguos (más de 30 días)
 DELETE FROM BATCH_STEP_EXECUTION
 WHERE job_execution_id IN (
@@ -1452,7 +1347,7 @@ WHERE job_execution_id IN (
 DELETE FROM BATCH_JOB_EXECUTION
 WHERE create_time < NOW() - INTERVAL '30 days';
 
--- Vacuum para recuperar espacio
+-- Vacuum
 VACUUM FULL;
 ```
 
@@ -1463,9 +1358,10 @@ VACUUM FULL;
 kill {pid}
 
 # 2. Limpiar MongoDB
-mongo --host localhost --port 30000 -u dvsmart_user -p eoQQqfTyMd --authenticationDatabase dvsmart-ms <<EOF
+mongo localhost:30000/dvsmart-ms -u dvsmart_user -p eoQQqfTyMd --authenticationDatabase dvsmart-ms <<EOF
 use dvsmart-ms
 db.files_index.deleteMany({})
+db.job_executions_audit.deleteMany({})
 EOF
 
 # 3. Limpiar PostgreSQL
@@ -1482,126 +1378,6 @@ java -jar target/dvsmart_indexing_api.jar
 
 ---
 
-## 🔒 Consideraciones de Seguridad
-
-### Credenciales
-
-⚠️ **NUNCA** commitear credenciales en el repositorio.
-
-**Usar variables de entorno:**
-
-```bash
-# .env (NO commitear)
-MONGODB_URI=mongodb://user:pass@host:27017/db
-POSTGRES_URL=jdbc:postgresql://host:5432/db
-POSTGRES_USER=user
-POSTGRES_PASS=pass
-SFTP_HOST=host
-SFTP_USER=user
-SFTP_PASS=pass
-
-# Cargar en aplicación
-export $(cat .env | xargs)
-java -jar target/dvsmart_indexing_api.jar
-```
-
-**Usar Kubernetes Secrets:**
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: dvsmart-secrets
-type: Opaque
-stringData:
-  mongodb-uri: mongodb://user:pass@host:27017/db
-  postgres-url: jdbc:postgresql://host:5432/db
-  postgres-user: user
-  postgres-pass: pass
-  sftp-user: user
-  sftp-pass: pass
-```
-
-```yaml
-# Deployment
-env:
-  - name: SPRING_MONGODB_URI
-    valueFrom:
-      secretKeyRef:
-        name: dvsmart-secrets
-        key: mongodb-uri
-  - name: SPRING_DATASOURCE_URL
-    valueFrom:
-      secretKeyRef:
-        name: dvsmart-secrets
-        key: postgres-url
-```
-
-### Red
-
-**Firewall:**
-- Permitir solo tráfico desde IPs conocidas
-- SFTP: Puerto 22 (SSH)
-- MongoDB: Puerto 27017 (interno)
-- PostgreSQL: Puerto 5432 (interno)
-- API: Puerto 8080 (exponer vía Ingress/LoadBalancer)
-
-**SSL/TLS:**
-
-```properties
-# SFTP con certificado
-sftp.origin.private-key=/path/to/private-key.pem
-sftp.origin.passphrase=keypass
-
-# MongoDB con TLS
-spring.mongodb.uri=mongodb://user:pass@host:27017/db?ssl=true&sslInvalidHostNameAllowed=false
-
-# PostgreSQL con SSL
-spring.datasource.url=jdbc:postgresql://host:5432/db?ssl=true&sslmode=require
-```
-
-### Roles y Permisos
-
-**MongoDB:**
-
-```javascript
-// Crear usuario con permisos mínimos
-use dvsmart-ms
-db.createUser({
-  user: "dvsmart_user",
-  pwd: "securepass",
-  roles: [
-    { role: "readWrite", db: "dvsmart-ms" }
-  ]
-})
-```
-
-**PostgreSQL:**
-
-```sql
--- Crear usuario con permisos mínimos
-CREATE USER dvsmart_ms WITH PASSWORD 'securepass';
-GRANT CONNECT ON DATABASE dvsmart TO dvsmart_ms;
-GRANT USAGE ON SCHEMA public TO dvsmart_ms;
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO dvsmart_ms;
-```
-
-### Auditoría
-
-**Logging de accesos:**
-
-```properties
-# Habilitar logs de seguridad
-logging.level.org.springframework.security=DEBUG
-logging.level.org.springframework.data.mongodb=DEBUG
-```
-
-**Registro de ejecuciones:**
-- Spring Batch registra automáticamente todas las ejecuciones en PostgreSQL
-- Incluye parámetros, tiempos, estados, errores
-
----
-
 ## 📚 Referencias
 
 - [Spring Batch Documentation](https://docs.spring.io/spring-batch/docs/current/reference/html/)
@@ -1612,18 +1388,9 @@ logging.level.org.springframework.data.mongodb=DEBUG
 
 ---
 
-## 📝 Licencia
-
-Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
-
-The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
-This file can only be copied, distributed and used all or in part with the
-written permission of Indra Sistemas, S.A, or in accordance with the terms and
-conditions laid down in the agreement / contract under which supplied.
-
 ## 🤝 Soporte y Contacto
 
-**Equipo de Mantenimiento**: DvSmart Reorganization Team  
+**Equipo de Mantenimiento**: DvSmart Team  
 **Contacto**: hahuaranga@indracompany.com  
 **Repositorio**: [Enlace interno al repositorio]  
 **Documentación Técnica**: [Enlace a documentación detallada]
