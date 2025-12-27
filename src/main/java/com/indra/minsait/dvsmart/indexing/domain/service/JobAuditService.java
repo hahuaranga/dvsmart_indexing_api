@@ -18,6 +18,7 @@ import com.indra.minsait.dvsmart.indexing.adapter.out.persistence.mongodb.reposi
 import com.indra.minsait.dvsmart.indexing.domain.model.JobExecutionAudit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.step.StepExecution;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,9 +28,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 
 /**
  * Author: hahuaranga@indracompany.com
@@ -83,41 +89,123 @@ public class JobAuditService {
      */
     public void updateAuditRecord(JobExecution jobExecution) {
         try {
-            Long jobExecutionId = jobExecution.getId();
+            // 1. Buscar el registro existente por jobExecutionId
+            Optional<JobExecutionAuditDocument> existingAudit = 
+                auditRepository.findByJobExecutionId(jobExecution.getId());
             
-            // ✅ 1. Obtener documento de BD
-            JobExecutionAuditDocument document = auditRepository
-                    .findByJobExecutionId(jobExecutionId)
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Audit record not found for job execution: " + jobExecutionId));
+            if (existingAudit.isEmpty()) {
+                log.warn("Audit record not found for job execution: {}. Cannot update.", jobExecution.getId());
+                return;
+            }
             
-            // ✅ 2. Mapear a modelo de dominio
-            JobExecutionAudit audit = toDomain(document);
+            // 2. Actualizar el documento existente
+            JobExecutionAuditDocument auditDoc = existingAudit.get();
             
-            // ✅ 3. Actualizar modelo de dominio
-            updateAuditWithJobMetrics(audit, jobExecution);
+            // Actualizar campos
+            auditDoc.setStatus(jobExecution.getStatus().name());
+            auditDoc.setExitCode(jobExecution.getExitStatus().getExitCode());
+            auditDoc.setExitDescription(jobExecution.getExitStatus().getExitDescription());
+            // Convertir LocalDateTime a Instant
+            auditDoc.setEndTime(
+                jobExecution.getEndTime() != null 
+                    ? jobExecution.getEndTime().atZone(ZoneId.systemDefault()).toInstant()
+                    : null
+            );
             
-            // ✅ 4. Mapear de vuelta a entidad
-            document = toDocument(audit);
+            // Calcular duración
+            if (jobExecution.getStartTime() != null && jobExecution.getEndTime() != null) {
+                long durationMs = Duration.between(
+                        jobExecution.getStartTime(), 
+                        jobExecution.getEndTime()
+                    ).toMillis();
+                auditDoc.setDurationMs(durationMs);
+                auditDoc.setDurationFormatted(formatDuration(durationMs));
+            }
             
-            // ✅ 5. Persistir
-            auditRepository.save(document);
+            // Obtener métricas del step
+            Collection<StepExecution> stepExecutions = jobExecution.getStepExecutions();
+            if (!stepExecutions.isEmpty()) {
+                StepExecution stepExecution = stepExecutions.iterator().next();
+                
+                auditDoc.setReadCount(stepExecution.getReadCount());
+                auditDoc.setWriteCount(stepExecution.getWriteCount());
+                auditDoc.setCommitCount(stepExecution.getCommitCount());
+                auditDoc.setRollbackCount(stepExecution.getRollbackCount());
+                
+                auditDoc.setTotalFilesIndexed(stepExecution.getWriteCount());
+                auditDoc.setTotalFilesProcessed(stepExecution.getReadCount());
+                auditDoc.setTotalFilesSkipped(stepExecution.getReadSkipCount() + stepExecution.getProcessSkipCount());
+                auditDoc.setTotalFilesFailed(stepExecution.getWriteSkipCount() + stepExecution.getRollbackCount());
+                
+                // Calcular throughput (filesPerSecond)
+                if (auditDoc.getDurationMs() != null && auditDoc.getDurationMs() > 0) {
+                    double seconds = auditDoc.getDurationMs() / 1000.0;
+                    double filesPerSecond = stepExecution.getWriteCount() / seconds;
+                    auditDoc.setFilesPerSecond(filesPerSecond);
+                }
+            }
+            
+            // Capturar errores si existen
+            if (jobExecution.getStatus() == BatchStatus.FAILED) {
+                List<Throwable> failureExceptions = jobExecution.getFailureExceptions();
+                if (!failureExceptions.isEmpty()) {
+                    Throwable firstException = failureExceptions.get(0);
+                    auditDoc.setErrorDescription(firstException.getMessage());
+                    auditDoc.setErrorStackTrace(getStackTraceAsString(firstException, 10));
+                }
+                auditDoc.setFailureCount(failureExceptions.size());
+            }
+            
+            // 3. Guardar (ahora hará UPDATE porque tiene _id)
+            auditRepository.save(auditDoc);
             
             log.info("✅ Audit record updated: auditId={}, status={}, filesIndexed={}, duration={}", 
-                     audit.getAuditId(), 
-                     audit.getStatus(), 
-                     audit.getTotalFilesIndexed(),
-                     audit.getDurationFormatted());
-            
+                auditDoc.getAuditId(), 
+                auditDoc.getStatus(), 
+                auditDoc.getTotalFilesIndexed(),
+                auditDoc.getDurationFormatted());
+                
         } catch (Exception e) {
-            log.error("Failed to update audit record for job execution: {}", 
-                      jobExecution.getId(), e);
+            log.error("Failed to update audit record for job execution: {}", jobExecution.getId(), e);
         }
     }
     
     // ========================================
     // MÉTODOS PRIVADOS - LÓGICA DE DOMINIO
     // ========================================
+    
+    /**
+     * Convierte el stack trace de una excepción a String, limitado a N líneas
+     */
+    private String getStackTraceAsString(Throwable throwable, int maxLines) {
+        if (throwable == null) {
+            return null;
+        }
+        
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        throwable.printStackTrace(pw);
+        
+        String fullStackTrace = sw.toString();
+        
+        // Limitar a las primeras N líneas
+        String[] lines = fullStackTrace.split("\n");
+        int linesToTake = Math.min(maxLines, lines.length);
+        
+        StringBuilder truncated = new StringBuilder();
+        for (int i = 0; i < linesToTake; i++) {
+            truncated.append(lines[i]);
+            if (i < linesToTake - 1) {
+                truncated.append("\n");
+            }
+        }
+        
+        if (lines.length > maxLines) {
+            truncated.append("\n... (").append(lines.length - maxLines).append(" more lines)");
+        }
+        
+        return truncated.toString();
+    }    
     
     /**
      * ✅ Construye el modelo de dominio inicial.
@@ -138,84 +226,6 @@ public class JobAuditService {
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
-    }
-    
-    /**
-     * ✅ Actualiza el modelo de dominio con métricas del job.
-     */
-    private void updateAuditWithJobMetrics(JobExecutionAudit audit, JobExecution jobExecution) {
-        // Calcular métricas
-        StepExecution stepExecution = jobExecution.getStepExecutions().stream()
-                .findFirst()
-                .orElse(null);
-        
-        long totalFilesIndexed = 0;
-        long totalFilesProcessed = 0;
-        long totalFilesSkipped = 0;
-        long totalFilesFailed = 0;
-        long readCount = 0;
-        long writeCount = 0;
-        long commitCount = 0;
-        long rollbackCount = 0;
-        
-        if (stepExecution != null) {
-            readCount = stepExecution.getReadCount();
-            writeCount = stepExecution.getWriteCount();
-            commitCount = stepExecution.getCommitCount();
-            rollbackCount = stepExecution.getRollbackCount();
-            
-            totalFilesProcessed = readCount;
-            totalFilesIndexed = writeCount;
-            totalFilesSkipped = stepExecution.getReadSkipCount() + 
-                               stepExecution.getProcessSkipCount() + 
-                               stepExecution.getFilterCount();
-            totalFilesFailed = stepExecution.getWriteSkipCount() + rollbackCount;
-        }
-        
-        // Calcular duración
-        LocalDateTime endTimeLocal = jobExecution.getEndTime();
-        Instant endTime = toInstant(endTimeLocal);
-        Long durationMs = null;
-        String durationFormatted = null;
-        Double filesPerSecond = null;
-        
-        if (endTime != null && audit.getStartTime() != null) {
-            durationMs = Duration.between(audit.getStartTime(), endTime).toMillis();
-            durationFormatted = formatDuration(durationMs);
-            
-            if (durationMs > 0 && totalFilesIndexed > 0) {
-                filesPerSecond = (double) totalFilesIndexed / (durationMs / 1000.0);
-            }
-        }
-        
-        // Actualizar modelo de dominio
-        audit.setEndTime(endTime);
-        audit.setDurationMs(durationMs);
-        audit.setDurationFormatted(durationFormatted);
-        audit.setStatus(jobExecution.getStatus().name());
-        audit.setExitCode(jobExecution.getExitStatus().getExitCode());
-        audit.setExitDescription(jobExecution.getExitStatus().getExitDescription());
-        
-        audit.setTotalFilesIndexed(totalFilesIndexed);
-        audit.setTotalFilesProcessed(totalFilesProcessed);
-        audit.setTotalFilesSkipped(totalFilesSkipped);
-        audit.setTotalFilesFailed(totalFilesFailed);
-        
-        audit.setReadCount(readCount);
-        audit.setWriteCount(writeCount);
-        audit.setCommitCount(commitCount);
-        audit.setRollbackCount(rollbackCount);
-        audit.setFilesPerSecond(filesPerSecond);
-        
-        // Información de errores
-        if (!jobExecution.getAllFailureExceptions().isEmpty()) {
-            Throwable firstException = jobExecution.getAllFailureExceptions().get(0);
-            audit.setErrorDescription(firstException.getMessage());
-            audit.setErrorStackTrace(truncateStackTrace(firstException));
-            audit.setFailureCount(jobExecution.getAllFailureExceptions().size());
-        }
-        
-        audit.setUpdatedAt(Instant.now());
     }
     
     /**
@@ -292,36 +302,6 @@ public class JobAuditService {
         }
     }
     
-    /**
-     * Trunca el stack trace para no saturar la BD.
-     */
-    private String truncateStackTrace(Throwable throwable) {
-        if (throwable == null) return null;
-        
-        StringBuilder sb = new StringBuilder();
-        sb.append(throwable.getClass().getName()).append(": ")
-          .append(throwable.getMessage()).append("\n");
-        
-        StackTraceElement[] elements = throwable.getStackTrace();
-        int limit = Math.min(elements.length, 10);
-        
-        for (int i = 0; i < limit; i++) {
-            sb.append("\tat ").append(elements[i].toString()).append("\n");
-        }
-        
-        if (elements.length > limit) {
-            sb.append("\t... ").append(elements.length - limit).append(" more");
-        }
-        
-        String result = sb.toString();
-        
-        if (result.length() > 2000) {
-            return result.substring(0, 1997) + "...";
-        }
-        
-        return result;
-    }
-    
     // ========================================
     // MAPPERS - DOMINIO ↔ INFRAESTRUCTURA
     // ========================================
@@ -363,40 +343,4 @@ public class JobAuditService {
                 .build();
     }
     
-    /**
-     * ✅ Mapea entidad MongoDB → modelo de dominio.
-     */
-    private JobExecutionAudit toDomain(JobExecutionAuditDocument document) {
-        return JobExecutionAudit.builder()
-                .auditId(document.getAuditId())
-                .jobExecutionId(document.getJobExecutionId())
-                .serviceName(document.getServiceName())
-                .jobName(document.getJobName())
-                .startTime(document.getStartTime())
-                .endTime(document.getEndTime())
-                .durationMs(document.getDurationMs())
-                .durationFormatted(document.getDurationFormatted())
-                .status(document.getStatus())
-                .exitCode(document.getExitCode())
-                .exitDescription(document.getExitDescription())
-                .totalFilesIndexed(document.getTotalFilesIndexed())
-                .totalFilesProcessed(document.getTotalFilesProcessed())
-                .totalFilesSkipped(document.getTotalFilesSkipped())
-                .totalFilesFailed(document.getTotalFilesFailed())
-                .totalDirectoriesProcessed(document.getTotalDirectoriesProcessed())
-                .readCount(document.getReadCount())
-                .writeCount(document.getWriteCount())
-                .commitCount(document.getCommitCount())
-                .rollbackCount(document.getRollbackCount())
-                .filesPerSecond(document.getFilesPerSecond())
-                .errorDescription(document.getErrorDescription())
-                .errorStackTrace(document.getErrorStackTrace())
-                .failureCount(document.getFailureCount())
-                .jobParameters(document.getJobParameters())
-                .hostname(document.getHostname())
-                .instanceId(document.getInstanceId())
-                .createdAt(document.getCreatedAt())
-                .updatedAt(document.getUpdatedAt())
-                .build();
-    }
 }
