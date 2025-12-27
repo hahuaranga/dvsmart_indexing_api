@@ -39,7 +39,7 @@ public class BatchIndexingController {
     private final StartIndexFullUseCase startIndexingFullUseCase;
 
     @PostMapping("/full")
-    public ResponseEntity<Map<String, Object>> startFullReorganization(@Valid @RequestBody JobIndexRequest request) {
+    public ResponseEntity<Map<String, Object>> startFullIndexing(@Valid @RequestBody JobIndexRequest request) {
         log.info("Received request to start full indexing of disorganized files");
         
         Long jobExecutionId = startIndexingFullUseCase.execute(

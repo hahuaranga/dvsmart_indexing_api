@@ -64,9 +64,10 @@ public class StartIndexFullService implements StartIndexFullUseCase {
 
             JobExecution jobExecution = jobOperator.run(batchIndexFullJob, jobParameters);
             
-            log.info("Job launched: executionId={}, status={}", 
-                jobExecution.getId(), 
-                jobExecution.getStatus());
+            
+            
+            log.info("Job launched successfully: executionId={}, status={}", 
+                jobExecution.getId(), jobExecution.getStatus());
             
             return jobExecution.getId();
             
