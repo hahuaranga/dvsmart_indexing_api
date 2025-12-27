@@ -16,8 +16,6 @@ package com.indra.minsait.dvsmart.indexing.adapter.out.persistence.mongodb.entit
 import lombok.Builder;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
@@ -35,10 +33,6 @@ import java.util.Map;
 @Data
 @Builder
 @Document(collection = "job_executions_audit")
-@CompoundIndexes({
-    @CompoundIndex(name = "job_status_idx", def = "{'jobName': 1, 'status': 1, 'startTime': -1}"),
-    @CompoundIndex(name = "service_date_idx", def = "{'serviceName': 1, 'startTime': -1}")
-})
 public class JobExecutionAuditDocument {
     
     @Id
