@@ -50,8 +50,6 @@ import org.springframework.stereotype.Component;
 public class BulkUpsertMongoItemWriter implements ItemWriter<ArchivoMetadata> {
 
     private final MongoTemplate mongoTemplate;
-    //private long totalInserted = 0;
-    //private long totalUpdated = 0;
 
     @Override
     public void write(Chunk<? extends ArchivoMetadata> chunk) {
@@ -102,9 +100,6 @@ public class BulkUpsertMongoItemWriter implements ItemWriter<ArchivoMetadata> {
             
             int inserted = result.getInsertedCount();
             int updated = result.getModifiedCount();
-            
-            //totalInserted += inserted;
-            //totalUpdated += updated;
             
             // ✅ NUEVO: Log mejorado con conteo de errores
             log.info("Bulk write completed: {} inserted, {} updated | Success: {}, Failed: {}", 

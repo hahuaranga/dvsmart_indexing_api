@@ -1,1396 +1,1084 @@
-# dvsmart_indexing_api
 
-## 📋 Tabla de Contenidos
+# DVSmart Indexing API
 
-- [Descripción General](#-descripción-general)
-- [Stack Tecnológico](#-stack-tecnológico)
-- [Arquitectura del Sistema](#-arquitectura-del-sistema)
-  - [Diagrama de Componentes](#diagrama-de-componentes)
-  - [Flujo de Procesamiento](#flujo-de-procesamiento)
-  - [Arquitectura Hexagonal](#arquitectura-hexagonal)
-  - [Técnicas de Procesamiento](#técnicas-de-procesamiento)
-  - [Sistema de Auditoría](#sistema-de-auditoría)
-- [Requisitos Previos](#-requisitos-previos)
-- [Instalación y Setup](#-instalación-y-setup)
-- [Guía Completa de Configuración](#-guía-completa-de-configuración)
-- [Configuración de Alto Rendimiento](#-configuración-de-alto-rendimiento)
-- [Uso y API](#-uso-y-api)
-- [Monitorización y Observabilidad](#-monitorización-y-observabilidad)
-- [Troubleshooting](#-troubleshooting)
-- [Mantenimiento y Testing](#-mantenimiento-y-testing)
-- [Referencias](#-referencias)
-- [Soporte y Contacto](#-soporte-y-contacto)
+> Microservicio de **indexación masiva de archivos** desde un **SFTP Origen** hacia un **catálogo MongoDB** (`files_index`), implementado con **Spring Boot / Spring Batch**, **Spring Integration SFTP** con **pool perezoso (lazy)** y auditoría de ejecuciones en Mongo. Incluye endpoints REST para **disparo del job**, **auditoría** y **monitorización del pool SFTP y de jobs**. citeturn6search1
 
 ---
 
-## 🎯 Descripción General
+## Índice
 
-**dvsmart_indexing_api** es un microservicio empresarial de alto rendimiento diseñado para indexar masivamente archivos almacenados en servidores SFTP. El sistema procesa millones de archivos de forma distribuida, extrayendo metadata y persistiéndola en MongoDB para su posterior consulta y organización.
-
-### Casos de Uso Principales
-
-- **Indexación masiva**: Procesamiento de 11M+ archivos en ~30-60 minutos
-- **Descubrimiento de estructura**: Mapeo recursivo de jerarquías de directorios complejas
-- **Auditoría completa**: Registro detallado de cada ejecución en MongoDB
-- **Alta disponibilidad**: Pool de conexiones SFTP con gestión automática de recursos
-
-### Características Clave
-
-✅ **Pool de Conexiones SFTP Lazy**: Conexiones creadas bajo demanda, liberadas automáticamente  
-✅ **Procesamiento Asíncrono**: Pipeline de 3 etapas (Reader → Processor → Writer) con paralelismo configurable  
-✅ **Bulk Upserts a MongoDB**: 3000-5000 documentos/segundo vs 100-200 con operaciones individuales  
-✅ **Persistencia Dual**: PostgreSQL para metadatos de Spring Batch, MongoDB para archivos indexados y auditoría  
-✅ **Sistema de Auditoría**: Registro completo de métricas, throughput y estado de cada ejecución  
-✅ **Monitorización Integrada**: Actuator + endpoints custom para observabilidad del pool SFTP y jobs  
-✅ **Resiliente**: Validación de conexiones, eviction de idle sessions, retry logic  
-
----
-
-## 🛠 Stack Tecnológico
-
-| Tecnología | Versión | Propósito |
-|------------|---------|-----------|
-| **Java** | 21 | Lenguaje base con soporte LTS |
-| **Spring Boot** | 4.0.1 | Framework de aplicación |
-| **Spring Batch** | 6.0.0 | Procesamiento por lotes de alto rendimiento |
-| **Spring Integration** | 7.0.0 | Integración con sistemas externos (SFTP) |
-| **MongoDB** | 5.0+ | Persistencia de metadata de archivos y auditoría |
-| **PostgreSQL** | 12+ | Metadata de Spring Batch (job repository) |
-| **Apache Commons Pool2** | - | Gestión del pool de conexiones SFTP |
-| **SSHJ** | 0.38.0 | Cliente SFTP nativo |
-| **Lombok** | 1.18.30 | Reducción de boilerplate |
-| **Maven** | 3.8+ | Gestión de dependencias y build |
+- [Descripción y Stack tecnológico](#descripción-y-stack-tecnologico)
+- [Criterios de diseño del servicio (HLD)](#criterios-de-diseño-del-servicio-hld)
+  - [Adapters](#adapters)
+  - [Application](#application)
+  - [Domain](#domain)
+  - [Batch](#batch)
+  - [Infra](#infra)
+  - [Cross-cutting](#cross-cutting)
+- [Arquitectura](#arquitectura)
+  - [Diagrama de arquitectura](#diagrama-de-arquitectura)
+  - [Diagrama de componentes](#diagrama-de-componentes)
+  - [Diagrama de secuencia](#diagrama-de-secuencia)
+  - [Diagrama de clases](#diagrama-de-clases)
+  - [Técnicas de procesamiento](#técnicas-de-procesamiento)
+- [Guía Completa de Configuración (application.properties)](#guía-completa-de-configuración-applicationproperties)
+- [Despliegue y Escalabilidad](#despliegue-y-escalabilidad)
+- [Uso y API (por controller y ruta)](#uso-y-api-por-controller-y-ruta)
+- [Monitorización, Logs y Troubleshooting](#monitorización-logs-y-troubleshooting)
+- [Riesgos y mitigaciones](#riesgos-y-mitigaciones)
+- [Soporte y contacto](#soporte-y-contacto)
+- [Referencias](#referencias)
 
 ---
 
-## 🏗 Arquitectura del Sistema
+## Descripción y Stack tecnologico
 
-### Diagrama de Componentes
+**Propósito**: Indexar masivamente archivos ubicados en un SFTP de origen, extrayendo **metadata de archivos** (ruta, nombre, extensión, tamaño, mtime) y persistiendo en **MongoDB** (`files_index`) con control de **estado de indexación** (`PENDING|COMPLETED|FAILED`) y campos de **reorganización** para otros servicios. El servicio ofrece **auditoría de jobs** en `job_executions_audit` y **monitorización** de pool SFTP y jobs. citeturn6search1
 
-```mermaid
-graph TB
-    subgraph "Cliente"
-        API[REST Controller]
-    end
+**Tecnologías clave**:
+- **Java 21**, **Maven**, **Spring Boot 4.0.1** (*starter parent*). citeturn6search1
+- **Spring Web**, **Validation**, **Spring Data MongoDB**, **Actuator**. citeturn6search1
+- **Spring Batch JDBC** con persistencia en **PostgreSQL** para metadatos. citeturn6search1
+- **Spring Integration SFTP** + **pool lazy** con **Apache Commons Pool2** (factory y monitor). citeturn6search1
+- **Colecciones Mongo**: `files_index`, `job_executions_audit`. citeturn6search1
 
-    subgraph "Capa de Aplicación"
-        UC[StartIndexFullUseCase]
-        SVC[StartIndexFullService]
-    end
+---
 
-    subgraph "Spring Batch Job"
-        JOB[BatchIndexFullJob]
-        LISTENER[JobExecutionAuditListener]
-        STEP[IndexingStep]
-        
-        subgraph "Pipeline Asíncrono"
-            READER[DirectoryQueueItemReader]
-            PROCESSOR[MetadataExtractorProcessor]
-            WRITER[BulkUpsertMongoItemWriter]
-        end
-    end
+## Criterios de diseño del servicio (HLD)
 
-    subgraph "Infraestructura"
-        POOL[CustomLazySftpSessionFactory]
-        MONITOR[SftpPoolMonitor]
-        AUDIT_SVC[JobAuditService]
-    end
+### Adapters
+- **BatchIndexingController** (`/api/batch/index/full`): inicia el job **BATCH-INDEX-FULL** y retorna `202 Accepted` con `jobExecutionId`. citeturn6search1
+- **JobAuditController** (`/api/monitoring/audit/*`): historial por job, por **status**, detalle por **jobExecutionId**, consultas por **rango**, **stats** globales y **últimas ejecuciones**. citeturn6search1
+- **MonitoringController** (`/api/monitoring/*`): estadísticas del **SFTP pool** (básicas y extendidas), **health** del pool, acciones de **evict/reset/log**, y consultas de **jobs** (lista, running, latest, history, execution detail, stats, health). citeturn6search1
 
-    subgraph "Sistemas Externos"
-        SFTP[Servidor SFTP Origen]
-        MONGO[(MongoDB)]
-        POSTGRES[(PostgreSQL)]
-    end
+### Application
+- **StartIndexFullUseCase / StartIndexFullService**: orquestan el lanzamiento del job con **JobOperator**, construcción de `JobParameters` (incluye `timestamp` y parámetros de entrada), y validaciones previas. citeturn6search1
 
-    API -->|POST /api/batch/index/full| UC
-    UC --> SVC
-    SVC -->|Lanza job| JOB
-    JOB -->|beforeJob/afterJob| LISTENER
-    LISTENER --> AUDIT_SVC
-    JOB --> STEP
-    STEP --> READER
-    READER -->|Lee archivos| PROCESSOR
-    PROCESSOR -->|Extrae metadata| WRITER
-    WRITER -->|Bulk upsert| MONGO
+### Domain
+- **FileMetadataService**: transforma `SftpFileEntry` a `ArchivoMetadata`, genera `idUnico` **SHA-256** y define estado de indexación (`COMPLETED` o `FAILED`). citeturn6search1
+- **DirectoryDiscoveryService**: **descubrimiento recursivo** de directorios (BFS) usando una sola **sesión SFTP** por *scan*, devolviendo una **cola concurrente** de rutas. citeturn6search1
+- **JobAuditService**: crea y actualiza auditoría (`job_executions_audit`), calcula duración, throughput, y recoge errores/stacktrace; mapea dominio⇄documento. citeturn6search1
 
-    READER -.->|Adquiere sesión| POOL
-    POOL -.->|Conexión SSH| SFTP
-    MONITOR -.->|Monitorea| POOL
-    JOB -.->|Persiste estado| POSTGRES
-    AUDIT_SVC -.->|Guarda auditoría| MONGO
-```
+### Batch
+- **BatchIndexFullConfig**: define el job `BATCH-INDEX-FULL` con un **step** `indexingStep` (*chunk*=`batch.chunk-size`) y **procesamiento asíncrono** (`AsyncItemProcessor` + `AsyncItemWriter`). Usa `@StepScope` en el **reader** para *fresh discovery* por ejecución y aplica **skip/retry** (`skipLimit`, `retryLimit`). Listener de auditoría `JobExecutionAuditListener`. citeturn6search1
+- **Reader**: `DirectoryQueueItemReader` con estrategia **Lazy Discovery + Hybrid Streaming** (carga directorio a directorio). citeturn6search1
+- **Processor**: `MetadataExtractorProcessor` (filtros, enriquecimiento, **manejo de errores no disruptivo** creando metadata con `indexing_status=FAILED`). citeturn6search1
+- **Writer**: `BulkUpsertMongoItemWriter` (**bulk upsert** en modo `UNORDERED`) sobre `MongoTemplate`, setea `reorg_status=PENDING` o `SKIPPED` si falló indexación. citeturn6search1
 
-### Flujo de Procesamiento
+### Infra
+- **SftpSessionFactoryConfig**: `DefaultSftpSessionFactory` + **CustomLazySftpSessionFactory** con **validación**, **eviction** y **pool stats**; `SftpRemoteFileTemplate` para operaciones SFTP; `SftpPoolMonitor` para métricas y *health*. citeturn6search1
+- **Mongo**: `JobExecutionAuditRepository` para consultas; documentos `DisorganizedFilesIndexDocument`, `JobExecutionAuditDocument`. citeturn6search1
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Controller
-    participant AuditListener
-    participant BatchJob
-    participant Reader
-    participant SftpPool
-    participant Processor
-    participant Writer
-    participant MongoDB
-    participant PostgreSQL
+### Cross-cutting
+- **Config**: `BatchConfigProperties`, `SftpConfigProperties` mapean `application.properties`. citeturn6search1
+- **Excepciones**: `GlobalExceptionHandler` (incluye `409` para `JobAlreadyRunningException`). citeturn6search1
+- **Actuator**: salud y métricas expuestas. citeturn6search1
 
-    Client->>Controller: POST /api/batch/index/full
-    Controller->>BatchJob: Lanzar job
-    
-    Note over BatchJob: JobExecutionListener.beforeJob()
-    BatchJob->>AuditListener: beforeJob(jobExecution)
-    AuditListener->>MongoDB: INSERT audit record (STARTED)
-    BatchJob->>PostgreSQL: Registrar ejecución
-    
-    Note over BatchJob: Phase 1: Discovery
-    BatchJob->>Reader: Descubrir directorios
-    Reader->>SftpPool: Obtener sesión (1 vez)
-    SftpPool-->>Reader: Queue de directorios
-    
-    Note over BatchJob: Phase 2: Indexing
-    loop Por cada chunk de 100 archivos
-        Reader->>SftpPool: Obtener sesión
-        SftpPool-->>Reader: Archivos del directorio
-        
-        par Procesamiento paralelo (20 threads)
-            Reader->>Processor: SftpFileEntry[]
-            Processor->>Processor: Extraer metadata
-        end
-        
-        par Escritura paralela
-            Processor->>Writer: ArchivoMetadata[]
-            Writer->>MongoDB: Bulk upsert (100 docs)
-        end
-        
-        Writer->>PostgreSQL: Commit chunk
-    end
-    
-    Note over BatchJob: JobExecutionListener.afterJob()
-    BatchJob->>AuditListener: afterJob(jobExecution)
-    AuditListener->>PostgreSQL: Leer métricas finales
-    AuditListener->>MongoDB: UPDATE audit record (COMPLETED)
-    
-    BatchJob->>PostgreSQL: Actualizar estado COMPLETED
-    BatchJob-->>Controller: JobExecutionId
-    Controller-->>Client: 202 Accepted
-```
+---
 
-### Arquitectura Hexagonal
+## Arquitectura
 
-```mermaid
-graph LR
-    subgraph "Dominio"
-        M1[ArchivoMetadata]
-        M2[JobExecutionAudit]
-        S1[FileMetadataService]
-        S2[DirectoryDiscoveryService]
-        S3[JobAuditService]
-    end
-
-    subgraph "Puertos Entrada"
-        PI[StartIndexFullUseCase]
-    end
-
-    subgraph "Adaptadores Entrada"
-        AI1[BatchIndexingController]
-        AI2[MonitoringController]
-        AI3[JobAuditController]
-    end
-
-    subgraph "Adaptadores Salida"
-        AO1[DirectoryQueueItemReader]
-        AO2[MetadataExtractorProcessor]
-        AO3[BulkUpsertMongoItemWriter]
-        AO4[CustomLazySftpSessionFactory]
-        AO5[JobExecutionAuditListener]
-    end
-
-    AI1 --> PI
-    AI2 --> PI
-    AI3 --> S3
-    PI --> S1
-    PI --> S2
-    S1 --> M1
-    S3 --> M2
-    AO1 --> S2
-    AO1 --> AO4
-    AO2 --> S1
-    AO3 --> MongoDB[(MongoDB)]
-    AO5 --> S3
-    AO4 --> SFTP[SFTP Server]
-```
-
-### Técnicas de Procesamiento
-
-#### 1. **Lazy Directory Discovery**
-
-```mermaid
-flowchart TD
-    A[Primera llamada a read] --> B{Discovery completado?}
-    B -->|No| C[Ejecutar BFS en SFTP]
-    C --> D[Crear queue de directorios]
-    D --> E[Marcar discovery completado]
-    E --> F[Retornar primer archivo]
-    B -->|Sí| G[Retornar archivo de queue actual]
-    G --> H{Queue actual vacía?}
-    H -->|Sí| I[Cargar siguiente directorio]
-    I --> G
-    H -->|No| F
-```
-
-**Ventajas:**
-- Discovery se ejecuta solo cuando el job arranca (no al iniciar la app)
-- Memoria eficiente: O(D) donde D = archivos en directorio actual
-- Una sola sesión SFTP para todo el escaneo
-- Procesamiento BFS (Breadth-First Search) recursivo
-
-**Implementación:**
-```java
-public SftpFileEntry read() {
-    // Primera llamada: discovery completo
-    if (!discoveryCompleted) {
-        executeDirectoryDiscovery();  // BFS recursivo
-        discoveryCompleted = true;
-    }
-    
-    // Retornar archivos del directorio actual
-    if (!currentDirectoryFiles.isEmpty()) {
-        return currentDirectoryFiles.poll();
-    }
-    
-    // Si no hay más directorios, terminar
-    if (directoryQueue.isEmpty()) {
-        return null;
-    }
-    
-    // Cargar siguiente directorio
-    loadDirectoryFiles(directoryQueue.poll());
-    return read();
-}
-```
-
-#### 2. **Async Processing Pipeline**
+### Diagrama de arquitectura
 
 ```mermaid
 flowchart LR
-    R[Reader<br/>1 thread] --> Q1[Queue<br/>Capacity: 1000]
-    Q1 --> P1[Processor<br/>Thread 1]
-    Q1 --> P2[Processor<br/>Thread 2]
-    Q1 --> P3[Processor<br/>...]
-    Q1 --> PN[Processor<br/>Thread N]
-    
-    P1 --> Q2[Queue]
-    P2 --> Q2
-    P3 --> Q2
-    PN --> Q2
-    
-    Q2 --> W[Writer<br/>Bulk Operations]
+  subgraph SFTP_Origin[SFTP Origen]
+    Dirs[(árbol de directorios)]
+  end
+
+  subgraph IndexingService[DVSmart Indexing API]
+    API[REST Controllers]
+    JOB[Spring Batch\nBATCH-INDEX-FULL]
+    S1[Step indexingStep\nReader + Async Proc + Async Writer]
+    AUDL[JobExecutionAuditListener]
+  end
+
+  subgraph Mongo[MongoDB]
+    FI[(files_index)]
+    AUD[(job_executions_audit)]
+  end
+
+  API --> JOB
+  JOB --> S1
+  S1 <-- list/read --> SFTP_Origin
+  S1 --> FI
+  AUDL --> AUD
 ```
+citeturn6search1
 
-**Ventajas:**
-- Paralelismo configurable (20 threads por defecto)
-- No bloqueante: Reader continúa mientras se procesa
-- Processor sin I/O: Solo transformación en memoria
-- Queue capacity evita saturación de memoria
+### Diagrama de componentes
 
-**Configuración:**
-```java
-@Bean
-AsyncItemProcessor<SftpFileEntry, ArchivoMetadata> asyncMetadataProcessor() {
-    AsyncItemProcessor<SftpFileEntry, ArchivoMetadata> asyncProcessor = 
-        new AsyncItemProcessor<>(metadataExtractorProcessor);
-    asyncProcessor.setTaskExecutor(indexingTaskExecutor());
-    return asyncProcessor;
-}
+```mermaid
 
-@Bean
-TaskExecutor indexingTaskExecutor() {
-    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-    executor.setCorePoolSize(batchProps.getThreadPoolSize());  // 20
-    executor.setMaxPoolSize(batchProps.getThreadPoolSize());
-    executor.setQueueCapacity(batchProps.getQueueCapacity());  // 1000
-    executor.initialize();
-    return executor;
-}
+flowchart TB
+  %% Adapters
+  subgraph Adapters
+    BIC[BatchIndexingController\nRutas: /api/batch/index/*]
+    JAC[JobAuditController\nRutas: /api/monitoring/audit/*]
+    MON[MonitoringController\nRutas: /api/monitoring/*]
+  end
+
+  %% Application
+  subgraph Application
+    UC[StartIndexFullUseCase]
+    SRV[StartIndexFullService\nJobOperator y JobParameters]
+  end
+
+  %% Domain
+  subgraph Domain
+    FMS[FileMetadataService\nGenera idUnico SHA-256]
+    DDS[DirectoryDiscoveryService\nDiscovery BFS]
+    JAS[JobAuditService\nCrear y actualizar auditoría]
+    MODELS[Modelos de dominio\nArchivoMetadata\nSftpFileEntry\nJobExecutionAudit]
+  end
+
+  %% Batch
+  subgraph Batch
+    CFG[BatchIndexFullConfig\nJob BATCH-INDEX-FULL]
+    READER[DirectoryQueueItemReader\nLazy discovery + streaming]
+    PROC[MetadataExtractorProcessor\nFiltros y manejo de errores]
+    AIP[AsyncItemProcessor]
+    AIW[AsyncItemWriter]
+    WR[BulkUpsertMongoItemWriter\nMongo bulk upsert]
+    LST[JobExecutionAuditListener]
+  end
+
+  %% Infra
+  subgraph Infra
+    SF[SftpSessionFactoryConfig\nDefault + Lazy Pool]
+    POOL[CustomLazySftpSessionFactory\nApache Commons Pool2]
+    TPL[SftpRemoteFileTemplate]
+    MONI[SftpPoolMonitor\nEstadísticas y salud]
+    AUDREP[JobExecutionAuditRepository]
+    MT[MongoTemplate]
+  end
+
+  %% Conexiones principales
+  BIC --> UC --> SRV --> CFG
+  JAC --> AUDREP
+  MON --> MONI
+
+  %% Cadena Batch
+  CFG --> READER --> PROC --> AIP --> AIW --> WR
+  LST --> JAS
+
+  %% Infraestructura
+  READER --> TPL
+  TPL --> POOL
+  SF --> POOL
+
+  WR --> MT
+  JAS --> AUDREP
+
 ```
+citeturn6search1
 
-#### 3. **Bulk Upsert Strategy**
+### Diagrama de secuencia
 
 ```mermaid
 sequenceDiagram
-    participant Writer
-    participant BulkOps
-    participant MongoDB
-    
-    Writer->>BulkOps: Crear operación UNORDERED
-    
-    loop Por cada ArchivoMetadata
-        Writer->>BulkOps: upsert(query, update)
-    end
-    
-    Writer->>BulkOps: execute()
-    BulkOps->>MongoDB: Bulk write (1 round-trip)
-    MongoDB-->>BulkOps: BulkWriteResult
-    BulkOps-->>Writer: inserted + modified counts
+  autonumber
+  participant C as Cliente
+  participant API as BatchIndexingController
+  participant APP as StartIndexFullService
+  participant JOB as Job BATCH-INDEX-FULL
+  participant R as DirectoryQueueItemReader
+  participant P as MetadataExtractorProcessor
+  participant W as BulkUpsertMongoItemWriter
+  participant M as MongoDB (files_index)
+  participant AUD as JobExecutionAuditListener
+  participant ADB as MongoDB (job_executions_audit)
+  participant SFTP as SFTP Origen
+
+  C->>API: POST /api/batch/index/full {jobName, parameters}
+  API->>APP: execute(jobName, params)
+  APP->>JOB: start
+  JOB->>AUD: beforeJob()
+  loop Lazy discovery + streaming
+    R->>SFTP: list directorio
+    R-->>JOB: SftpFileEntry
+    JOB->>P: process(entry)
+    P-->>JOB: ArchivoMetadata (COMPLETED|FAILED)
+    JOB->>W: write(chunk)
+    W->>M: bulk upsert
+  end
+  JOB->>AUD: afterJob() update metrics
+  AUD->>ADB: save/update audit
 ```
+citeturn6search1
 
-**Performance:**
-- Sin bulk: 100-200 docs/s (1 round-trip por doc)
-- Con bulk: 3000-5000 docs/s (1 round-trip por chunk)
-- Para 11M archivos: ~30-60 minutos vs ~15-30 horas
+### Diagrama de clases
 
-**Implementación:**
-```java
-public void write(Chunk<? extends ArchivoMetadata> chunk) {
-    BulkOperations bulkOps = mongoTemplate.bulkOps(
-        BulkOperations.BulkMode.UNORDERED,
-        DisorganizedFilesIndexDocument.class
-    );
+```mermaid
+classDiagram
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE PRESENTACIÓN (Adapters de Entrada - Driven)
+    %% ═══════════════════════════════════════════════════════════
     
-    for (ArchivoMetadata metadata : chunk) {
-        Query query = new Query(Criteria.where("idUnico").is(metadata.getIdUnico()));
-        Update update = /* build update */;
-        bulkOps.upsert(query, update);
+    class JobController {
+        -JobLauncher jobLauncher
+        -JobOperator jobOperator
+        -Map~String, Job~ jobs
+        +startJob(StartJobRequest) ResponseEntity~JobStatusResponse~
+        +getJobStatus(Long jobExecutionId) ResponseEntity~JobStatusResponse~
+        +stopJob(Long jobExecutionId) ResponseEntity~StopJobResponse~
+        +restartJob(Long jobExecutionId) ResponseEntity~JobStatusResponse~
+        +listJobs() ResponseEntity~List~String~~
+        +getJobHistory(String jobName) ResponseEntity~List~JobExecutionAudit~~
     }
     
-    BulkWriteResult result = bulkOps.execute();
-}
+    class HealthController {
+        -SftpSessionFactory sessionFactory
+        -MongoTemplate mongoTemplate
+        -DataSource dataSource
+        +health() ResponseEntity~Map~String,Object~~
+        +sftpHealth() ResponseEntity~Map~String,Object~~
+        +mongoHealth() ResponseEntity~Map~String,Object~~
+        +postgresHealth() ResponseEntity~Map~String,Object~~
+        +detailedHealth() ResponseEntity~HealthStatus~
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE APLICACIÓN (Puertos de Entrada)
+    %% ═══════════════════════════════════════════════════════════
+    
+    class JobService {
+        <<interface>>
+        +startJob(String jobName, Map params) JobExecution
+        +getJobStatus(Long jobExecutionId) JobExecution
+        +stopJob(Long jobExecutionId) void
+        +restartJob(Long jobExecutionId) JobExecution
+        +getJobHistory(String jobName) List~JobExecution~
+    }
+    
+    class JobServiceImpl {
+        -JobLauncher jobLauncher
+        -JobOperator jobOperator
+        -JobExplorer jobExplorer
+        +startJob(String jobName, Map params) JobExecution
+        +getJobStatus(Long jobExecutionId) JobExecution
+        +stopJob(Long jobExecutionId) void
+        +restartJob(Long jobExecutionId) JobExecution
+        +getJobHistory(String jobName) List~JobExecution~
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE DOMINIO - CONFIGURACIÓN BATCH
+    %% ═══════════════════════════════════════════════════════════
+    
+    class SftpBatchConfig {
+        -JobRepository jobRepository
+        -PlatformTransactionManager transactionManager
+        -int chunkSize
+        -int skipLimit
+        -int retryLimit
+        +indexingJob() Job
+        +reorganizationWithCleanupJob() Job
+        +reorganizationOnlyJob() Job
+        +cleanupOnlyJob() Job
+        +indexingStep() Step
+        +reorganizationStep() Step
+        +cleanupOriginStep() Step
+        +exponentialBackOffPolicy() ExponentialBackOffPolicy
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE DOMINIO - READERS (ItemReader)
+    %% ═══════════════════════════════════════════════════════════
+    
+    class FileItemReader {
+        <<ItemReader>>
+        -SftpRemoteFileTemplate sftpTemplate
+        -String remoteDirectory
+        -Pattern filePattern
+        -LocalDateTime startDate
+        -LocalDateTime endDate
+        -Iterator~LsEntry~ fileIterator
+        -boolean initialized
+        +read() FileMetadata
+        -listFiles() List~LsEntry~
+        -filterByDate(FileMetadata) boolean
+        -filterByPattern(String) boolean
+        -toFileMetadata(LsEntry) FileMetadata
+        -generateIdUnico(FileMetadata) String
+    }
+    
+    class MongoFileItemReader {
+        <<ItemReader>>
+        -MongoTemplate mongoTemplate
+        -String reorgStatus
+        -Boolean deletedFromSource
+        -Iterator~FileMetadata~ fileIterator
+        +read() FileMetadata
+        -queryFiles() List~FileMetadata~
+        -buildQuery() Query
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE DOMINIO - PROCESSORS (ItemProcessor)
+    %% ═══════════════════════════════════════════════════════════
+    
+    class FileReorganizationProcessor {
+        <<ItemProcessor>>
+        -SftpRemoteFileTemplate sftpTemplate
+        -ReorganizationStrategy strategy
+        -boolean validateChecksum
+        -boolean preserveTimestamps
+        +process(FileMetadata) FileMetadata
+        -calculateDestination(FileMetadata) String
+        -moveFile(String source, String dest) void
+        -validateChecksum(String source, String dest) boolean
+        -calculateMd5(String path) String
+        -fileExistsInDestination(String path) boolean
+        -createDestinationDirectories(String path) void
+    }
+    
+    class CleanupOriginProcessor {
+        <<ItemProcessor>>
+        -SftpRemoteFileTemplate sftpTemplate
+        -String requiredStatus
+        -int minAgeHours
+        -boolean validationEnabled
+        +process(FileMetadata) FileMetadata
+        -validateForCleanup(FileMetadata) boolean
+        -deleteSourceFile(String path) boolean
+        -isOldEnough(LocalDateTime date) boolean
+        -updateDeletionMetadata(FileMetadata) void
+    }
+    
+    class FileValidationProcessor {
+        <<ItemProcessor>>
+        -SftpRemoteFileTemplate sftpTemplate
+        -long maxFileSize
+        -List~String~ allowedExtensions
+        +process(FileMetadata) FileMetadata
+        -validateFileSize(FileMetadata) boolean
+        -validateFileType(FileMetadata) boolean
+        -validateFileExists(String path) boolean
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE DOMINIO - WRITERS (ItemWriter)
+    %% ═══════════════════════════════════════════════════════════
+    
+    class FileItemWriter {
+        <<ItemWriter>>
+        -MongoTemplate mongoTemplate
+        -String collectionName
+        -int batchSize
+        +write(Chunk~FileMetadata~) void
+        -upsertBatch(List~FileMetadata~) BulkWriteResult
+        -buildQuery(FileMetadata) Query
+        -buildUpdate(FileMetadata) Update
+        -handleDuplicates(FileMetadata) void
+        -logWriteResult(BulkWriteResult) void
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE DOMINIO - LISTENERS
+    %% ═══════════════════════════════════════════════════════════
+    
+    class AuditListener {
+        <<JobExecutionListener>>
+        -JobExecutionAuditRepository repository
+        -String serviceName
+        -String hostname
+        +beforeJob(JobExecution) void
+        +afterJob(JobExecution) void
+        -createAuditRecord(JobExecution) JobExecutionAudit
+        -calculateMetrics(JobExecution) void
+        -calculateDuration(JobExecution) long
+        -formatDuration(long millis) String
+        -extractStepExecutions(JobExecution) List~StepExecutionSummary~
+        -calculateThroughput(JobExecution) double
+    }
+    
+    class MetricsListener {
+        <<StepExecutionListener>>
+        -MeterRegistry meterRegistry
+        +beforeStep(StepExecution) void
+        +afterStep(StepExecution) ExitStatus
+        -recordStepMetrics(StepExecution) void
+        -recordFileProcessed(String type, long size) void
+        -recordSftpOperation(String op, long duration) void
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE DOMINIO - ESTRATEGIAS
+    %% ═══════════════════════════════════════════════════════════
+    
+    class ReorganizationStrategy {
+        <<interface>>
+        +calculateDestination(FileMetadata) String
+        +isChecksumValidationEnabled() boolean
+        +shouldPreserveTimestamps() boolean
+    }
+    
+    class DateBasedStrategy {
+        -String datePattern
+        -String baseDestination
+        +calculateDestination(FileMetadata) String
+        +isChecksumValidationEnabled() boolean
+        +shouldPreserveTimestamps() boolean
+        -formatDate(LocalDateTime) String
+    }
+    
+    class ClientBasedStrategy {
+        -String baseDestination
+        -Map~String,String~ clientMappings
+        +calculateDestination(FileMetadata) String
+        +isChecksumValidationEnabled() boolean
+        +shouldPreserveTimestamps() boolean
+        -extractClientId(FileMetadata) String
+    }
+    
+    class TypeBasedStrategy {
+        -String baseDestination
+        -Map~String,String~ typeMappings
+        +calculateDestination(FileMetadata) String
+        +isChecksumValidationEnabled() boolean
+        +shouldPreserveTimestamps() boolean
+        -extractFileType(FileMetadata) String
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE DOMINIO - MODELOS
+    %% ═══════════════════════════════════════════════════════════
+    
+    class FileMetadata {
+        <<Entity>>
+        -String id
+        -String idUnico
+        -String remotePath
+        -String fileName
+        -Long fileSize
+        -LocalDateTime lastModificationDate
+        -String fileType
+        -LocalDateTime indexedDate
+        -LocalDateTime reorganizedDate
+        -String reorgStatus
+        -String destinationPath
+        -Boolean deletedFromSource
+        -LocalDateTime sourceDeletionDate
+        -String deletedBy
+        -String checksum
+        -Map~String,String~ customMetadata
+        -LocalDateTime createdAt
+        -LocalDateTime updatedAt
+        +isPending() boolean
+        +isCompleted() boolean
+        +isFailed() boolean
+        +needsCleanup() boolean
+    }
+    
+    class JobExecutionAudit {
+        <<Entity>>
+        -String auditId
+        -Long jobExecutionId
+        -String serviceName
+        -String jobName
+        -LocalDateTime startTime
+        -LocalDateTime endTime
+        -Long durationMs
+        -String durationFormatted
+        -String status
+        -String exitCode
+        -String exitDescription
+        -Long totalFilesIndexed
+        -Long totalFilesProcessed
+        -Long totalFilesSkipped
+        -Long totalFilesFailed
+        -Long totalFilesDeleted
+        -Long totalFilesDeletionFailed
+        -Long readCount
+        -Long writeCount
+        -Long commitCount
+        -Long rollbackCount
+        -Double filesPerSecond
+        -List~StepExecutionSummary~ stepExecutions
+        -String errorDescription
+        -String errorStackTrace
+        -Integer failureCount
+        -Map~String,Object~ jobParameters
+        -String hostname
+        -String instanceId
+        -LocalDateTime createdAt
+        -LocalDateTime updatedAt
+        +isCompleted() boolean
+        +isFailed() boolean
+        +getTotalFiles() long
+    }
+    
+    class StepExecutionSummary {
+        <<ValueObject>>
+        -String stepName
+        -String status
+        -Long readCount
+        -Long writeCount
+        -Long skipCount
+        -String duration
+        +isCompleted() boolean
+        +isFailed() boolean
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE DOMINIO - DTOs
+    %% ═══════════════════════════════════════════════════════════
+    
+    class StartJobRequest {
+        <<DTO>>
+        -String jobName
+        -Map~String,Object~ jobParameters
+        +validate() boolean
+    }
+    
+    class JobStatusResponse {
+        <<DTO>>
+        -Long jobExecutionId
+        -String jobName
+        -String status
+        -LocalDateTime startTime
+        -LocalDateTime endTime
+        -String exitCode
+        -List~StepExecutionSummary~ stepExecutions
+        -Map~String,Object~ metrics
+        +fromJobExecution(JobExecution) JobStatusResponse
+    }
+    
+    class StopJobResponse {
+        <<DTO>>
+        -String message
+        -Long jobExecutionId
+        -String status
+    }
+    
+    class HealthStatus {
+        <<DTO>>
+        -String status
+        -Map~String,ComponentHealth~ components
+        -LocalDateTime timestamp
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE INFRAESTRUCTURA - CONFIGURACIÓN
+    %% ═══════════════════════════════════════════════════════════
+    
+    class SftpSessionFactoryConfig {
+        -String host
+        -int port
+        -String username
+        -String password
+        -String privateKeyPath
+        -int connectionTimeout
+        -GenericObjectPoolConfig poolConfig
+        +sftpSessionFactory() DefaultSftpSessionFactory
+        +sftpTemplate() SftpRemoteFileTemplate
+        +createPoolConfig() GenericObjectPoolConfig
+        -configureSession(Session) void
+    }
+    
+    class MongoConfig {
+        -String uri
+        -String database
+        -int maxPoolSize
+        -int minPoolSize
+        +mongoTemplate() MongoTemplate
+        +mongoClient() MongoClient
+        -createIndexes() void
+    }
+    
+    class BatchDataSourceConfig {
+        -String url
+        -String username
+        -String password
+        +dataSource() DataSource
+        +transactionManager() PlatformTransactionManager
+        +jobRepository() JobRepository
+        +jobExplorer() JobExplorer
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE INFRAESTRUCTURA - REPOSITORIES
+    %% ═══════════════════════════════════════════════════════════
+    
+    class FileIndexRepository {
+        <<interface>>
+        <<MongoRepository>>
+        +findByIdUnico(String idUnico) Optional~FileMetadata~
+        +findByReorgStatus(String status) List~FileMetadata~
+        +findByReorgStatusAndDeletedFromSource(String status, Boolean deleted) List~FileMetadata~
+        +findCleanupCandidates() List~FileMetadata~
+        +countByReorgStatus(String status) long
+        +findByFileType(String fileType) List~FileMetadata~
+        +findByIndexedDateBetween(LocalDateTime start, LocalDateTime end) List~FileMetadata~
+    }
+    
+    class JobExecutionAuditRepository {
+        <<interface>>
+        <<MongoRepository>>
+        +findByJobExecutionId(Long id) Optional~JobExecutionAudit~
+        +findByJobName(String jobName) List~JobExecutionAudit~
+        +findByServiceName(String serviceName) List~JobExecutionAudit~
+        +findByStatus(String status) List~JobExecutionAudit~
+        +findByJobNameAndStatus(String jobName, String status) List~JobExecutionAudit~
+        +findByStartTimeBetween(LocalDateTime start, LocalDateTime end) List~JobExecutionAudit~
+        +findTopByJobNameOrderByStartTimeDesc(String jobName) Optional~JobExecutionAudit~
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% CAPA DE INFRAESTRUCTURA - EXCEPCIONES
+    %% ═══════════════════════════════════════════════════════════
+    
+    class GlobalExceptionHandler {
+        <<ControllerAdvice>>
+        +handleJobNotFoundException(JobNotFoundException) ResponseEntity
+        +handleJobExecutionException(JobExecutionException) ResponseEntity
+        +handleValidationException(MethodArgumentNotValidException) ResponseEntity
+        +handleSftpException(SftpException) ResponseEntity
+        +handleMongoException(MongoException) ResponseEntity
+        +handleGenericException(Exception) ResponseEntity
+        -buildErrorResponse(Exception) ErrorResponse
+    }
+    
+    class SftpConnectionException {
+        <<Exception>>
+        -String host
+        -int port
+        +SftpConnectionException(String message, Throwable cause)
+    }
+    
+    class FileProcessingException {
+        <<Exception>>
+        -String filePath
+        -String operation
+        +FileProcessingException(String message, Throwable cause)
+    }
+    
+    class ChecksumMismatchException {
+        <<Exception>>
+        -String sourcePath
+        -String destinationPath
+        -String sourceChecksum
+        -String destChecksum
+        +ChecksumMismatchException(String message)
+    }
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% RELACIONES - PRESENTACIÓN → APLICACIÓN
+    %% ═══════════════════════════════════════════════════════════
+    
+    JobController --> JobService : usa
+    JobController --> StartJobRequest : recibe
+    JobController --> JobStatusResponse : retorna
+    JobController --> StopJobResponse : retorna
+    
+    HealthController --> SftpSessionFactoryConfig : usa
+    HealthController --> MongoConfig : usa
+    HealthController --> HealthStatus : retorna
+    
+    JobServiceImpl ..|> JobService : implementa
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% RELACIONES - APLICACIÓN → DOMINIO
+    %% ═══════════════════════════════════════════════════════════
+    
+    JobServiceImpl --> SftpBatchConfig : usa
+    
+    SftpBatchConfig --> FileItemReader : crea
+    SftpBatchConfig --> MongoFileItemReader : crea
+    SftpBatchConfig --> FileReorganizationProcessor : crea
+    SftpBatchConfig --> CleanupOriginProcessor : crea
+    SftpBatchConfig --> FileValidationProcessor : crea
+    SftpBatchConfig --> FileItemWriter : crea
+    SftpBatchConfig --> AuditListener : registra
+    SftpBatchConfig --> MetricsListener : registra
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% RELACIONES - DOMINIO (READERS)
+    %% ═══════════════════════════════════════════════════════════
+    
+    FileItemReader --> FileMetadata : produce
+    FileItemReader --> SftpSessionFactoryConfig : usa
+    
+    MongoFileItemReader --> FileMetadata : produce
+    MongoFileItemReader --> FileIndexRepository : usa
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% RELACIONES - DOMINIO (PROCESSORS)
+    %% ═══════════════════════════════════════════════════════════
+    
+    FileReorganizationProcessor --> FileMetadata : transforma
+    FileReorganizationProcessor --> ReorganizationStrategy : usa
+    FileReorganizationProcessor --> SftpSessionFactoryConfig : usa
+    
+    CleanupOriginProcessor --> FileMetadata : transforma
+    CleanupOriginProcessor --> SftpSessionFactoryConfig : usa
+    
+    FileValidationProcessor --> FileMetadata : valida
+    FileValidationProcessor --> SftpSessionFactoryConfig : usa
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% RELACIONES - DOMINIO (STRATEGIES)
+    %% ═══════════════════════════════════════════════════════════
+    
+    DateBasedStrategy ..|> ReorganizationStrategy : implementa
+    ClientBasedStrategy ..|> ReorganizationStrategy : implementa
+    TypeBasedStrategy ..|> ReorganizationStrategy : implementa
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% RELACIONES - DOMINIO (WRITERS)
+    %% ═══════════════════════════════════════════════════════════
+    
+    FileItemWriter --> FileMetadata : persiste
+    FileItemWriter --> FileIndexRepository : usa
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% RELACIONES - DOMINIO (LISTENERS)
+    %% ═══════════════════════════════════════════════════════════
+    
+    AuditListener --> JobExecutionAudit : crea
+    AuditListener --> StepExecutionSummary : crea
+    AuditListener --> JobExecutionAuditRepository : usa
+    
+    MetricsListener --> FileMetadata : observa
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% RELACIONES - DOMINIO (MODELOS)
+    %% ═══════════════════════════════════════════════════════════
+    
+    JobExecutionAudit *-- StepExecutionSummary : contiene
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% RELACIONES - INFRAESTRUCTURA
+    %% ═══════════════════════════════════════════════════════════
+    
+    FileIndexRepository --> FileMetadata : gestiona
+    JobExecutionAuditRepository --> JobExecutionAudit : gestiona
+    
+    GlobalExceptionHandler --> SftpConnectionException : maneja
+    GlobalExceptionHandler --> FileProcessingException : maneja
+    GlobalExceptionHandler --> ChecksumMismatchException : maneja
+    
+    %% ═══════════════════════════════════════════════════════════
+    %% ESTILOS VISUALES POR CAPA
+    %% ═══════════════════════════════════════════════════════════
+    
+    style JobController fill:#4CAF50,stroke:#2E7D32,color:#fff
+    style HealthController fill:#4CAF50,stroke:#2E7D32,color:#fff
+    
+    style JobService fill:#9C27B0,stroke:#6A1B9A,color:#fff
+    style JobServiceImpl fill:#9C27B0,stroke:#6A1B9A,color:#fff
+    
+    style SftpBatchConfig fill:#2196F3,stroke:#1565C0,color:#fff
+    
+    style FileItemReader fill:#2196F3,stroke:#1565C0,color:#fff
+    style MongoFileItemReader fill:#2196F3,stroke:#1565C0,color:#fff
+    style FileReorganizationProcessor fill:#2196F3,stroke:#1565C0,color:#fff
+    style CleanupOriginProcessor fill:#2196F3,stroke:#1565C0,color:#fff
+    style FileValidationProcessor fill:#2196F3,stroke:#1565C0,color:#fff
+    style FileItemWriter fill:#2196F3,stroke:#1565C0,color:#fff
+    style AuditListener fill:#2196F3,stroke:#1565C0,color:#fff
+    style MetricsListener fill:#2196F3,stroke:#1565C0,color:#fff
+    
+    style ReorganizationStrategy fill:#00BCD4,stroke:#0097A7,color:#fff
+    style DateBasedStrategy fill:#00BCD4,stroke:#0097A7,color:#fff
+    style ClientBasedStrategy fill:#00BCD4,stroke:#0097A7,color:#fff
+    style TypeBasedStrategy fill:#00BCD4,stroke:#0097A7,color:#fff
+    
+    style FileMetadata fill:#00BCD4,stroke:#0097A7,color:#fff
+    style JobExecutionAudit fill:#00BCD4,stroke:#0097A7,color:#fff
+    style StepExecutionSummary fill:#00BCD4,stroke:#0097A7,color:#fff
+    
+    style StartJobRequest fill:#FFC107,stroke:#F57F17,color:#000
+    style JobStatusResponse fill:#FFC107,stroke:#F57F17,color:#000
+    style StopJobResponse fill:#FFC107,stroke:#F57F17,color:#000
+    style HealthStatus fill:#FFC107,stroke:#F57F17,color:#000
+    
+    style SftpSessionFactoryConfig fill:#FF9800,stroke:#E65100,color:#fff
+    style MongoConfig fill:#4DB33D,stroke:#2E7D32,color:#fff
+    style BatchDataSourceConfig fill:#336791,stroke:#1A237E,color:#fff
+    
+    style FileIndexRepository fill:#4DB33D,stroke:#2E7D32,color:#fff
+    style JobExecutionAuditRepository fill:#4DB33D,stroke:#2E7D32,color:#fff
+    
+    style GlobalExceptionHandler fill:#F44336,stroke:#C62828,color:#fff
+    style SftpConnectionException fill:#F44336,stroke:#C62828,color:#fff
+    style FileProcessingException fill:#F44336,stroke:#C62828,color:#fff
+    style ChecksumMismatchException fill:#F44336,stroke:#C62828,color:#fff
 ```
+citeturn6search1
 
-#### 4. **Connection Pool Lifecycle**
+### Técnicas de procesamiento
 
-```mermaid
-stateDiagram-v2
-    [*] --> Idle: Pool inicializado (lazy)
-    
-    Idle --> Creating: getSession() llamado
-    Creating --> Active: Sesión creada
-    Active --> Validating: testOnBorrow=true
-    Validating --> InUse: Validación OK
-    Validating --> Destroyed: Validación falla
-    
-    InUse --> Returning: close() llamado
-    Returning --> Idle: Devuelta al pool
-    
-    Idle --> Evicting: Eviction timer
-    Evicting --> Destroyed: Idle > minEvictableIdleTime
-    
-    Destroyed --> [*]
-```
+- **Lazy Discovery + Hybrid Streaming**: primer `read()` ejecuta un **discovery completo** de directorios con **una sola sesión**; luego se procesan directorios **uno a uno**, manteniendo en memoria solo el lote de entradas del directorio actual. citeturn6search1
+- **Procesamiento por chunks + async**: `AsyncItemProcessor` y `AsyncItemWriter` con `ThreadPoolTaskExecutor` configurable (`batch.thread-pool-size`, `batch.queue-capacity`). citeturn6search1
+- **Extracción de metadata resiliente**: ante errores, el processor **no interrumpe**; devuelve `ArchivoMetadata` con `indexing_status=FAILED` y `indexing_errorDescription` truncado. citeturn6search1
+- **Bulk upsert en Mongo**: `BulkOperations.UNORDERED` sobre `MongoTemplate`, actualizando `indexing_*` y seteando `reorg_status` inicial según resultado de indexación. citeturn6search1
+- **Pool SFTP perezoso**: `CustomLazySftpSessionFactory` con **validación pre-uso**, **eviction** y **stats** (health, utilization), expuesto vía `SftpPoolMonitor` y endpoints REST. citeturn6search1
+- **Auditoría integral**: listener captura tiempos, contadores (`read/write/commit/rollback`), `filesPerSecond`, errores y parámetros; guarda en `job_executions_audit`. citeturn6search1
 
-**Ventajas:**
-- Lazy init: No conexiones al inicio
-- testOnBorrow: Detecta conexiones zombie
-- Eviction: Libera recursos automáticamente
-- Validación pre-uso con comando SFTP simple
+---
 
-**Configuración:**
+## Guía Completa de Configuración (application.properties)
+
 ```properties
-sftp.origin.pool.lazy-init=true
-sftp.origin.pool.initial-size=0
-sftp.origin.pool.max-size=10
-sftp.origin.pool.test-on-borrow=true
-sftp.origin.pool.time-between-eviction-runs-millis=60000
-sftp.origin.pool.min-evictable-idle-time-millis=300000
-```
-
-### Sistema de Auditoría
-
-#### Arquitectura de Auditoría
-
-```mermaid
-graph TB
-    subgraph "Spring Batch Metadata (PostgreSQL)"
-        PG_JOB[BATCH_JOB_EXECUTION<br/>Estado global]
-        PG_STEP[BATCH_STEP_EXECUTION<br/>Métricas técnicas]
-        PG_JOB --> PG_STEP
-    end
-    
-    subgraph "Auditoría de Negocio (MongoDB)"
-        MONGO_AUDIT[job_executions_audit<br/>Métricas + KPIs]
-    end
-    
-    subgraph "JobExecutionListener"
-        LISTENER[beforeJob/afterJob]
-    end
-    
-    LISTENER -->|Lee métricas| PG_STEP
-    LISTENER -->|Calcula KPIs| MONGO_AUDIT
-    
-    style PG_JOB fill:#87CEEB
-    style PG_STEP fill:#87CEEB
-    style MONGO_AUDIT fill:#90EE90
-```
-
-#### Datos Capturados en Auditoría
-
-**Información básica:**
-- `auditId`: ID único (jobName-jobExecutionId-uuid)
-- `jobExecutionId`: Referencia a Spring Batch
-- `serviceName`: Nombre del microservicio
-- `jobName`: Nombre del job (BATCH-INDEX-FULL)
-
-**Tiempos y duración:**
-- `startTime`: Fecha/hora de inicio
-- `endTime`: Fecha/hora de fin
-- `durationMs`: Duración en milisegundos
-- `durationFormatted`: Formato legible (ej: "29m 55s")
-
-**Estado y resultados:**
-- `status`: STARTED, COMPLETED, FAILED, STOPPED
-- `exitCode`: COMPLETED, FAILED, UNKNOWN
-- `exitDescription`: Descripción del resultado
-
-**Métricas de procesamiento:**
-- `totalFilesIndexed`: Total de archivos indexados (write_count)
-- `totalFilesProcessed`: Total procesados (read_count)
-- `totalFilesSkipped`: Total saltados (skips + filters)
-- `totalFilesFailed`: Total fallidos (write_skip + rollbacks)
-- `totalDirectoriesProcessed`: Directorios escaneados
-
-**Métricas de rendimiento:**
-- `readCount`, `writeCount`, `commitCount`, `rollbackCount`
-- `filesPerSecond`: Throughput calculado (⭐ único en auditoría)
-
-**Información de errores:**
-- `errorDescription`: Mensaje del error principal
-- `errorStackTrace`: Stack trace truncado (10 líneas)
-- `failureCount`: Número de fallos
-
-**Información del servidor:**
-- `hostname`: Host donde se ejecutó
-- `instanceId`: Pod de Kubernetes (si aplica)
-- `jobParameters`: Parámetros de entrada
-
-#### Comparación: Spring Batch vs Auditoría
-
-| Aspecto | Spring Batch (PostgreSQL) | Auditoría (MongoDB) |
-|---------|--------------------------|---------------------|
-| **Propósito** | Control técnico del framework | Métricas de negocio y BI |
-| **Usuario** | Spring Batch internamente | Dashboards, reportes, analistas |
-| **Queries** | JOINs complejos | Queries simples |
-| **Performance lectura** | Lento (múltiples tablas) | Rápido (documento único) |
-| **Datos únicos** | ExecutionContext, versioning | filesPerSecond, hostname, KPIs |
-| **Uso** | Restart jobs, recovery | Reportes, análisis, alertas |
-
-**Ejemplo de redundancia beneficiosa:**
-
-```javascript
-// ✅ Query simple en MongoDB (auditoría)
-db.job_executions_audit.find({
-  jobName: "BATCH-INDEX-FULL",
-  status: "COMPLETED",
-  filesPerSecond: { $gt: 5000 }
-}).sort({ startTime: -1 })
-
-// vs
-
-// ❌ Query compleja en PostgreSQL (Spring Batch)
-SELECT 
-    je.job_execution_id,
-    je.status,
-    se.write_count,
-    (se.write_count::float / EXTRACT(EPOCH FROM (je.end_time - je.start_time))) as files_per_second
-FROM batch_job_execution je
-JOIN batch_step_execution se ON je.job_execution_id = se.job_execution_id
-JOIN batch_job_instance ji ON je.job_instance_id = ji.job_instance_id
-WHERE ji.job_name = 'BATCH-INDEX-FULL'
-  AND je.status = 'COMPLETED'
-  AND (se.write_count::float / EXTRACT(EPOCH FROM (je.end_time - je.start_time))) > 5000
-ORDER BY je.start_time DESC;
-```
-
----
-
-## 📦 Requisitos Previos
-
-### Software Requerido
-
-- **JDK 21** (OpenJDK o Oracle)
-- **Maven 3.8+**
-- **MongoDB 5.0+**
-- **PostgreSQL 12+**
-- **Servidor SFTP** con acceso configurado
-
-### Recursos Mínimos
-
-**Desarrollo:**
-- RAM: 4 GB
-- CPU: 2 cores
-- Disco: 2 GB
-
-**Producción (11M archivos):**
-- RAM: 8-16 GB (según `batch.thread-pool-size`)
-- CPU: 4-8 cores
-- Disco: 10 GB (logs + metadata temporal de Batch)
-
----
-
-## 🚀 Instalación y Setup
-
-### Compilación del Proyecto
-
-```bash
-# Clonar repositorio
-git clone <repository-url>
-cd dvsmart_indexing_api
-
-# Verificar Maven
-mvn -version
-
-# Limpiar y compilar (skip tests)
-mvn clean package -DskipTests
-
-# Compilar y ejecutar tests
-mvn clean install
-```
-
-**Artefacto generado:** `target/dvsmart_indexing_api.jar`
-
-### Aplicar Licencias (CopyRight Headers)
-
-```bash
-# Aplicar headers a todos los archivos .java
-mvn license:format
-
-# Verificar headers
-mvn license:check
-```
-
-### Inicializar Base de Datos MongoDB
-
-**⚠️ IMPORTANTE:** Ejecutar el script de inicialización ANTES del primer despliegue.
-
-```bash
-# Desarrollo (local con NodePort)
-mongo localhost:30000/dvsmart-ms \
-  -u dvsmart_user \
-  -p eoQQqfTyMd \
-  --authenticationDatabase dvsmart-ms \
-  scripts/mongodb/01_init_collections.js
-
-# Producción (cluster interno)
-mongo dvsmart-catalog-mongodb.dvsmart.svc.cluster.local:27017/dvsmart-ms \
-  -u dvsmart_user \
-  -p eoQQqfTyMd \
-  --authenticationDatabase dvsmart-ms \
-  scripts/mongodb/01_init_collections.js
-```
-
-**El script crea:**
-- ✅ Colección `files_index` con validación de esquema y 7 índices
-- ✅ Colección `job_executions_audit` con validación de esquema y 9 índices
-- ✅ Documentos de ejemplo en ambas colecciones
-- ✅ Usuario de aplicación con permisos readWrite
-
-**Verificar que todo está OK:**
-
-```javascript
-// Conectar a MongoDB
-mongo localhost:30000/dvsmart-ms -u dvsmart_user -p eoQQqfTyMd --authenticationDatabase dvsmart-ms
-
-// Verificar colecciones
-show collections
-// Debe mostrar: files_index, job_executions_audit
-
-// Verificar índices de files_index
-db.files_index.getIndexes().length
-// Debe retornar: 8 (incluyendo _id)
-
-// Verificar índices de job_executions_audit
-db.job_executions_audit.getIndexes().length
-// Debe retornar: 10 (incluyendo _id)
-
-// Verificar documentos de ejemplo
-db.files_index.countDocuments()
-// Debe retornar: 5
-
-db.job_executions_audit.countDocuments()
-// Debe retornar: 3
-```
-
-### Configuración de PostgreSQL
-
-**Crear usuario y base de datos:**
-
-```sql
--- Conectar como superusuario
-psql -U postgres
-
--- Crear base de datos
-CREATE DATABASE dvsmart;
-
--- Crear usuario
-CREATE USER dvsmart_ms WITH PASSWORD 'OgxjdNEeQl';
-
--- Otorgar permisos
-GRANT ALL PRIVILEGES ON DATABASE dvsmart TO dvsmart_ms;
-
--- Conectar a la base de datos
-\c dvsmart
-
--- Otorgar permisos en el schema
-GRANT ALL ON SCHEMA public TO dvsmart_ms;
-```
-
-**Verificar tablas de Spring Batch:**
-
-Después del primer arranque, Spring Batch creará automáticamente las siguientes tablas:
-
-```sql
--- Verificar tablas creadas
-\dt
-
--- Debe mostrar:
--- BATCH_JOB_INSTANCE
--- BATCH_JOB_EXECUTION
--- BATCH_JOB_EXECUTION_PARAMS
--- BATCH_STEP_EXECUTION
--- BATCH_JOB_EXECUTION_CONTEXT
--- BATCH_STEP_EXECUTION_CONTEXT
-```
-
-### Configuración del Servidor SFTP
-
-**Verificar conectividad:**
-
-```bash
-# Conexión manual
-sftp -P 22 sftpsourceuser@sftp-host
-
-# Test de latencia
-ping sftp-host
-
-# Test de puerto
-telnet sftp-host 22
-```
-
-### Ejecución Local
-
-```bash
-# Modo development
-mvn spring-boot:run
-
-# O usando el JAR compilado
-java -jar target/dvsmart_indexing_api.jar
-
-# Con perfil prod
-java -jar target/dvsmart_indexing_api.jar --spring.profiles.active=prod
-
-# Sobreescribir propiedades
-java -jar target/dvsmart_indexing_api.jar \
-  --server.port=9090 \
-  --spring.mongodb.uri=mongodb://localhost:27017/test
-```
-
-La aplicación estará disponible en:
-```
-http://localhost:8080/dvsmart_indexing_api
-```
-
----
-
-## ⚙️ Guía Completa de Configuración
-
-### Archivo: `application.properties`
-
-#### Configuración Base
-
-```properties
-# Aplicación
+# Core
 spring.application.name=dvsmart-indexing-api
 server.servlet.context-path=/dvsmart_indexing_api
 server.port=8080
 server.shutdown=graceful
-```
 
-| Propiedad | Valor | Descripción |
-|-----------|-------|-------------|
-| `spring.application.name` | `dvsmart-indexing-api` | Nombre usado en auditoría |
-| `server.servlet.context-path` | `/dvsmart_indexing_api` | Context path base |
-| `server.port` | `8080` | Puerto HTTP |
-| `server.shutdown` | `graceful` | Espera jobs activos antes de cerrar |
+# MongoDB
+aub.spring.mongodb.uri=mongodb://dvsmart_user:***@localhost:30000/dvsmart-ms?authSource=dvsmart-ms
 
-#### MongoDB
-
-```properties
-spring.mongodb.uri=mongodb://dvsmart_user:eoQQqfTyMd@localhost:30000/dvsmart-ms?authSource=dvsmart-ms
-
-# ✅ CRÍTICO: Desactivar auto-creación de índices
-# Los índices se crean mediante script 01_init_collections.js
-spring.data.mongodb.auto-index-creation=false
-```
-
-**Colecciones utilizadas:**
-
-| Colección | Propósito | Índices | Documentos ejemplo |
-|-----------|-----------|---------|-------------------|
-| `files_index` | Metadata de archivos indexados | 8 índices (1 único, 7 búsqueda) | 5 |
-| `job_executions_audit` | Auditoría de ejecuciones | 10 índices (2 únicos, 8 búsqueda) | 3 |
-
-#### PostgreSQL (Spring Batch Repository)
-
-```properties
+# PostgreSQL (Spring Batch)
 spring.datasource.url=jdbc:postgresql://localhost:30005/dvsmart
 spring.datasource.driver-class-name=org.postgresql.Driver
 spring.datasource.username=dvsmart_ms
-spring.datasource.password=OgxjdNEeQl
+spring.datasource.password=***
 spring.datasource.hikari.maximum-pool-size=10
 spring.datasource.hikari.minimum-idle=5
-```
 
-**Tablas de Spring Batch (creadas automáticamente):**
-
-| Tabla | Propósito |
-|-------|-----------|
-| `BATCH_JOB_INSTANCE` | Instancias de jobs |
-| `BATCH_JOB_EXECUTION` | Ejecuciones de jobs |
-| `BATCH_STEP_EXECUTION` | Ejecuciones de steps (⭐ métricas detalladas) |
-| `BATCH_JOB_EXECUTION_PARAMS` | Parámetros de ejecución |
-
-#### Spring Batch
-
-```properties
+# Spring Batch
 spring.batch.job.enabled=false
 spring.batch.jdbc.initialize-schema=always
-```
 
-| Propiedad | Valor | Descripción |
-|-----------|-------|-------------|
-| `spring.batch.job.enabled` | `false` | ⚠️ **CRÍTICO:** Desactiva inicio automático |
-| `spring.batch.jdbc.initialize-schema` | `always` | Crea tablas al inicio |
-
-#### Configuración del Batch (Prefijo: `batch.*`)
-
-```properties
+# Batch (custom)
 batch.chunk-size=100
 batch.thread-pool-size=20
 batch.queue-capacity=1000
 batch.skip-limit=5
 batch.retry-limit=3
-```
 
-| Propiedad | Valor | Rango | Descripción |
-|-----------|-------|-------|-------------|
-| `batch.chunk-size` | `100` | `50-1000` | Archivos procesados por chunk antes de commit |
-| `batch.thread-pool-size` | `20` | `10-50` | Threads del `AsyncItemProcessor/Writer` |
-| `batch.queue-capacity` | `1000` | `500-5000` | Capacidad de cola de tareas pendientes |
-| `batch.skip-limit` | `5` | `0-100` | Máximo de errores saltables por chunk |
-| `batch.retry-limit` | `3` | `0-10` | Reintentos antes de fallar |
-
-**Configuraciones por entorno:**
-
-```properties
-# 🔹 DESARROLLO
-batch.chunk-size=50
-batch.thread-pool-size=5
-batch.queue-capacity=500
-
-# 🔹 PRODUCCIÓN ESTÁNDAR
-batch.chunk-size=100
-batch.thread-pool-size=20
-batch.queue-capacity=1000
-
-# 🔹 ALTO RENDIMIENTO (11M archivos)
-batch.chunk-size=500
-batch.thread-pool-size=50
-batch.queue-capacity=5000
-```
-
-#### Servidor SFTP Origen (Prefijo: `sftp.origin.*`)
-
-```properties
+# SFTP Origen
 sftp.origin.host=localhost
 sftp.origin.port=30002
 sftp.origin.user=sftpsourceuser
 sftp.origin.password=securepass
 sftp.origin.base-dir=/disorganized_data
 sftp.origin.timeout=30000
-```
 
-#### Pool de Conexiones SFTP (Prefijo: `sftp.origin.pool.*`)
-
-```properties
-# Pool lazy
+# SFTP Pool (lazy + health)
 sftp.origin.pool.lazy-init=true
 sftp.origin.pool.initial-size=0
 sftp.origin.pool.max-size=10
-sftp.origin.pool.size=10
-
-# Timeouts y validación
 sftp.origin.pool.max-wait-millis=30000
 sftp.origin.pool.test-on-borrow=true
-sftp.origin.pool.test-while-idle=true
-
-# Eviction (limpieza de idle)
 sftp.origin.pool.time-between-eviction-runs-millis=60000
 sftp.origin.pool.min-evictable-idle-time-millis=300000
-```
 
-| Propiedad | Valor | Descripción |
-|-----------|-------|-------------|
-| `lazy-init` | `true` | No crear conexiones al inicio |
-| `initial-size` | `0` | Pool completamente lazy |
-| `max-size` | `10` | Tamaño máximo del pool |
-| `test-on-borrow` | `true` | **CRÍTICO:** Validar antes de usar |
-| `min-evictable-idle-time-millis` | `300000` | 5 min idle antes de cerrar |
-
-#### Logging
-
-```properties
-# Niveles generales
+# Logging
 logging.level.root=INFO
 logging.level.com.indra.minsait.dvsmart.indexing=DEBUG
-
-# Componentes específicos
 logging.level.org.springframework.batch=INFO
 logging.level.org.springframework.integration.sftp=DEBUG
 logging.level.org.springframework.data.mongodb=INFO
-
-# Patrón
 logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n
-```
 
-#### Actuator (Monitorización)
-
-```properties
+# Actuator
 management.endpoints.web.exposure.include=health,info,metrics,batch
 management.endpoint.health.show-details=always
-
-# Métricas
 management.metrics.enable.jvm=true
 management.metrics.enable.process=true
 management.metrics.enable.system=true
 ```
+> **Notas**: El contexto es `/dvsmart_indexing_api`. Las credenciales y URIs se muestran en el `application.properties` del proyecto; externalízalas en `Secret/ConfigMap` para producción. citeturn6search1
 
 ---
 
-## 🔥 Configuración de Alto Rendimiento
+## Despliegue y Escalabilidad
 
-### Tuning de la JVM
+### Producción (contenedor / K8s)
+- **Variables y secretos**: externaliza `spring.mongodb.uri`, `spring.datasource.*`, `sftp.*` en `Secret`/`ConfigMap`. citeturn6search1
+- **Readiness/Liveness**: usa `/dvsmart_indexing_api/actuator/health` para probes. citeturn6search1
+- **Pool SFTP**: dimensiona `max-size` y `max-wait-millis` según latencia y concurrencia esperada. citeturn6search1
 
+### Alto rendimiento
+- **Chunking y paralelismo**: ajusta `batch.chunk-size` y `batch.thread-pool-size` tras pruebas de saturación; evita colas excesivas (`batch.queue-capacity`). citeturn6search1
+- **MongoDB**: verifica **índices** en `files_index` y `job_executions_audit` para las consultas críticas. citeturn6search1
+- **Logs**: en producción reduce a `INFO` para minimizar I/O. citeturn6search1
+
+### Build & Run
 ```bash
-# Variables de entorno
-export JAVA_OPTS="-Xms4g -Xmx8g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:ParallelGCThreads=4"
-
-java $JAVA_OPTS -jar target/dvsmart_indexing_api.jar
+mvn -q -DskipTests package
+java -jar target/dvsmart_indexing_api-1.0.0-SNAPSHOT.jar --spring.profiles.active=default
 ```
-
-| Flag | Valor | Propósito |
-|------|-------|-----------|
-| `-Xms4g` | Heap inicial 4GB | Evita resizing |
-| `-Xmx8g` | Heap máximo 8GB | Suficiente para 11M archivos |
-| `-XX:+UseG1GC` | G1 GC | Baja latencia |
-| `-XX:MaxGCPauseMillis=200` | Pausas < 200ms | Reduce impacto del GC |
-
-### Tuning de Spring Batch (11M archivos)
-
-```properties
-batch.chunk-size=500
-batch.thread-pool-size=50
-batch.queue-capacity=5000
-sftp.origin.pool.max-size=10
-```
-
-**Cálculo de throughput:**
-
-```
-Archivos: 11,000,000
-Chunk size: 500
-Threads: 50
-Tiempo por chunk: 2s
-
-Chunks totales: 11,000,000 / 500 = 22,000
-Tiempo: (22,000 / 50) * 2s = 880s ≈ 15 minutos
-```
-
-### Tuning de MongoDB
-
-**Índices ya creados por script:**
-
-```javascript
-// ✅ Ya están en 01_init_collections.js
-// files_index: 8 índices
-// job_executions_audit: 10 índices
-```
-
-**Write concern para alto throughput:**
-
-```properties
-# Agregar a URI
-spring.mongodb.uri=mongodb://user:pass@host:27017/db?w=1&maxPoolSize=100
-```
-
-### Tuning de PostgreSQL
-
-```sql
--- Aumentar shared_buffers para cache
-ALTER SYSTEM SET shared_buffers = '2GB';
-
--- Aumentar work_mem para ordenamientos
-ALTER SYSTEM SET work_mem = '64MB';
-
--- Checkpoint menos frecuentes
-ALTER SYSTEM SET checkpoint_timeout = '30min';
-
--- Aplicar cambios
-SELECT pg_reload_conf();
-```
+citeturn6search1
 
 ---
 
-## 📡 Uso y API
+## Uso y API (por controller y ruta)
 
-### Endpoints de Indexación
+> **Context path**: `/dvsmart_indexing_api`
 
-#### 🔵 Iniciar Indexación Completa
+### BatchIndexingController
 
-```http
-POST /dvsmart_indexing_api/api/batch/index/full
-Content-Type: application/json
-
+**POST** `/api/batch/index/full`
+- **Body**
+```json
 {
   "jobName": "BATCH-INDEX-FULL",
-  "parameters": {}
+  "parameters": { "runLabel": "manual-YYYY-MM-DD" }
 }
 ```
-
-**Response (202 Accepted):**
-
+- **curl**
+```bash
+curl -s -X POST \
+  http://localhost:8080/dvsmart_indexing_api/api/batch/index/full \
+  -H 'Content-Type: application/json' \
+  -d '{"jobName":"BATCH-INDEX-FULL","parameters":{"runLabel":"manual-2025-12-29"}}'
+```
+- **Respuesta (202)**
 ```json
-{
-  "message": "Batch job started successfully",
-  "jobExecutionId": 12345,
-  "status": "ACCEPTED"
-}
+{ "message": "Batch job started successfully", "jobExecutionId": 12345, "status": "ACCEPTED" }
 ```
+citeturn6search1
 
-**Ejemplos:**
+### JobAuditController
 
+**GET** `/api/monitoring/audit/jobs/{jobName}`
 ```bash
-# Local
-curl -X POST http://localhost:8080/dvsmart_indexing_api/api/batch/index/full \
-  -H "Content-Type: application/json" \
-  -d '{"jobName":"BATCH-INDEX-FULL","parameters":{}}'
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/jobs/BATCH-INDEX-FULL | jq
 ```
-
-### Endpoints de Auditoría
-
-#### 📊 Historial de Auditoría de un Job
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/audit/jobs/{jobName}
-```
-
-**Ejemplo:**
-
+**GET** `/api/monitoring/audit/status/{status}`
 ```bash
-curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/jobs/BATCH-INDEX-FULL | jq
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/status/COMPLETED | jq
 ```
-
-**Response:**
-
-```json
-[
-  {
-    "id": "676b1234567890abcdef1234",
-    "auditId": "BATCH-INDEX-FULL-12345-a1b2c3d4",
-    "jobExecutionId": 12345,
-    "serviceName": "dvsmart-indexing-api",
-    "jobName": "BATCH-INDEX-FULL",
-    "startTime": "2025-12-26T10:00:00Z",
-    "endTime": "2025-12-26T10:30:00Z",
-    "durationMs": 1800000,
-    "durationFormatted": "30m 0s",
-    "status": "COMPLETED",
-    "exitCode": "COMPLETED",
-    "totalFilesIndexed": 11000000,
-    "totalFilesProcessed": 11050000,
-    "totalFilesSkipped": 50000,
-    "totalFilesFailed": 0,
-    "filesPerSecond": 6111.11,
-    "hostname": "indexing-api-pod-abc123",
-    "instanceId": "indexing-api-pod-abc123"
-  }
-]
-```
-
-#### 📊 Ejecuciones por Estado
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/audit/status/{status}
-```
-
-**Ejemplos:**
-
+**GET** `/api/monitoring/audit/execution/{jobExecutionId}`
 ```bash
-# Ejecuciones completadas
-curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/status/COMPLETED | jq
-
-# Ejecuciones fallidas
-curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/status/FAILED | jq
-
-# Ejecuciones en curso
-curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/status/STARTED | jq
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/execution/12345 | jq
 ```
-
-#### 📊 Detalle de una Ejecución
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/audit/execution/{jobExecutionId}
-```
-
-**Ejemplo:**
-
+**GET** `/api/monitoring/audit/range?start=ISO&end=ISO`
 ```bash
-curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/execution/12345 | jq
+curl -s "http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/range?start=2025-12-01T00:00:00Z&end=2025-12-31T23:59:59Z" | jq
 ```
-
-#### 📊 Estadísticas Globales de Auditoría
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/audit/stats
-```
-
-**Response:**
-
-```json
-{
-  "totalExecutions": 150,
-  "completedExecutions": 140,
-  "failedExecutions": 8,
-  "startedExecutions": 2
-}
-```
-
-#### 📊 Últimas Ejecuciones
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/audit/latest
-```
-
-#### 📊 Ejecuciones en Rango de Fechas
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/audit/range?start={ISO_DATE}&end={ISO_DATE}
-```
-
-**Ejemplo:**
-
+**GET** `/api/monitoring/audit/stats`
 ```bash
-curl "http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/range?start=2025-12-01T00:00:00Z&end=2025-12-31T23:59:59Z" | jq
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/stats | jq
 ```
-
-### Endpoints de Monitorización SFTP Pool
-
-#### 🟢 Estadísticas Básicas del Pool
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/sftp-pool
+**GET** `/api/monitoring/audit/latest`
+```bash
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/latest | jq
 ```
+citeturn6search1
 
-**Response:**
+### MonitoringController – SFTP Pool
 
-```json
-{
-  "active": 2,
-  "idle": 3,
-  "maxTotal": 10,
-  "totalCreated": 5,
-  "totalDestroyed": 0,
-  "utilizationPercent": 20.0,
-  "availableSlots": 8
-}
+**GET** `/api/monitoring/sftp-pool`
+```bash
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/sftp-pool | jq
 ```
-
-#### 🟢 Health Check del Pool
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/sftp-pool/health
+**GET** `/api/monitoring/sftp-pool/extended`
+```bash
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/sftp-pool/extended | jq
 ```
-
-**Estados:**
-
-| Status | Condición | Acción |
-|--------|-----------|--------|
-| `HEALTHY` | utilization < 80% && failures < 10% | Normal |
-| `WARNING` | utilization 80-95% | Aumentar pool |
-| `DEGRADED` | failures > 10% | Revisar SFTP |
-| `CRITICAL` | utilization > 95% | Urgente |
-
-### Endpoints de Batch Jobs
-
-#### 🔍 Detalle de una Ejecución (Spring Batch)
-
-```http
-GET /dvsmart_indexing_api/api/monitoring/jobs/execution/{executionId}
+**GET** `/api/monitoring/sftp-pool/health`
+```bash
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/sftp-pool/health | jq
 ```
+**POST** `/api/monitoring/sftp-pool/evict`
+```bash
+curl -s -X POST http://localhost:8080/dvsmart_indexing_api/api/monitoring/sftp-pool/evict | jq
+```
+**POST** `/api/monitoring/sftp-pool/reset`
+```bash
+curl -s -X POST http://localhost:8080/dvsmart_indexing_api/api/monitoring/sftp-pool/reset | jq
+```
+**POST** `/api/monitoring/sftp-pool/log`
+```bash
+curl -s -X POST http://localhost:8080/dvsmart_indexing_api/api/monitoring/sftp-pool/log | jq
+```
+citeturn6search1
 
-**Response incluye:**
-- Estado del job
-- Métricas de todos los steps
-- Parámetros de entrada
-- Tiempos de ejecución
+### MonitoringController – Jobs de Spring Batch
+
+**GET** `/api/monitoring/jobs`
+```bash
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/jobs | jq
+```
+**GET** `/api/monitoring/jobs/running`
+```bash
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/jobs/running | jq
+```
+**GET** `/api/monitoring/jobs/latest`
+```bash
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/jobs/latest | jq
+```
+**GET** `/api/monitoring/jobs/{jobName}`
+```bash
+curl -s 'http://localhost:8080/dvsmart_indexing_api/api/monitoring/jobs/BATCH-INDEX-FULL?page=0&size=10' | jq
+```
+**GET** `/api/monitoring/jobs/execution/{id}`
+```bash
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/jobs/execution/12345 | jq
+```
+**GET** `/api/monitoring/jobs/stats`
+```bash
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/jobs/stats | jq
+```
+**GET** `/api/monitoring/health`
+```bash
+curl -s http://localhost:8080/dvsmart_indexing_api/api/monitoring/health | jq
+```
+citeturn6search1
+
+### Actuator
+
+**GET** `/actuator/health`
+```bash
+curl -s http://localhost:8080/dvsmart_indexing_api/actuator/health | jq
+```
+**GET** `/actuator/info`, `/actuator/metrics`, `/actuator/batch`
+```bash
+curl -s http://localhost:8080/dvsmart_indexing_api/actuator/info | jq
+curl -s http://localhost:8080/dvsmart_indexing_api/actuator/metrics | jq
+```
+citeturn6search1
 
 ---
 
-## 📊 Monitorización y Observabilidad
+## Monitorización, Logs y Troubleshooting
 
-### Health Checks
+### Monitorización
+- **Salud**: `/actuator/health` con detalles habilitados. citeturn6search1
+- **Pool SFTP**: endpoints de `MonitoringController` para **stats**, **health** y **acciones** de mantenimiento. citeturn6search1
+- **Auditoría**: `JobAuditController` para seguimiento de ejecuciones y métricas agregadas. citeturn6search1
 
-```bash
-# Health general
-curl http://localhost:8080/dvsmart_indexing_api/actuator/health | jq
+### Logs
+- **Paquetes**: `com.indra.minsait.dvsmart.indexing=DEBUG` en pruebas; `INFO` en prod. citeturn6search1
+- **SFTP/Mongo/Batch**: niveles ajustables en `application.properties`. citeturn6search1
 
-# Debe mostrar:
-# - MongoDB: UP
-# - PostgreSQL: UP
-# - diskSpace: UP
-```
+### Troubleshooting
 
-### Métricas Disponibles
-
-| Fuente | Métricas | Propósito |
-|--------|----------|-----------|
-| **PostgreSQL** | read_count, write_count, commit_count | Control técnico de Spring Batch |
-| **MongoDB (auditoría)** | filesPerSecond, throughput, KPIs | Dashboards y reportes de negocio |
-| **Pool SFTP** | active, idle, utilization | Monitoreo de recursos |
-
-### Logs Estructurados
-
-**Ejemplo de log completo:**
-
-```
-2025-12-26 10:00:00 - Starting FULL INDEXING JOB
-2025-12-26 10:00:00 - ════════════════════════════════════════════════════════
-2025-12-26 10:00:00 - 📋 AUDIT: Creating audit record for job execution
-2025-12-26 10:00:00 -    Job Name: BATCH-INDEX-FULL
-2025-12-26 10:00:00 -    Execution ID: 12345
-2025-12-26 10:00:00 - ════════════════════════════════════════════════════════
-2025-12-26 10:00:00 - ✅ Audit record created: auditId=BATCH-INDEX-FULL-12345-a1b2c3d4, jobExecutionId=12345
-2025-12-26 10:00:01 - ════════════════════════════════════════════════════════
-2025-12-26 10:00:01 - 🔄 OPEN: Initializing DirectoryQueueItemReader
-2025-12-26 10:00:01 - Base directory: /disorganized_data
-2025-12-26 10:00:01 - ════════════════════════════════════════════════════════
-2025-12-26 10:00:02 - PHASE 1: DIRECTORY DISCOVERY
-2025-12-26 10:00:25 - ✅ Discovery completed in 23000 ms (23 seconds)
-2025-12-26 10:00:25 - Total directories to process: 8543
-2025-12-26 10:00:25 - PHASE 2: FILE INDEXING
-2025-12-26 10:00:32 - Bulk write completed: 100 inserted, 0 updated | Success: 100, Failed: 0
-2025-12-26 10:05:00 - 📊 Progress: 100 directories processed, 12500 files indexed
-2025-12-26 10:29:30 - ✅ INDEXING COMPLETED
-2025-12-26 10:29:30 - Total files indexed: 11000000
-2025-12-26 10:29:30 - Total directories processed: 8543
-2025-12-26 10:29:30 - ════════════════════════════════════════════════════════
-2025-12-26 10:29:30 - 📋 AUDIT: Updating audit record for job execution
-2025-12-26 10:29:30 -    Status: COMPLETED
-2025-12-26 10:29:30 - ✅ Audit record updated: auditId=BATCH-INDEX-FULL-12345-a1b2c3d4, status=COMPLETED, filesIndexed=11000000, duration=30m 0s
-```
-
-### Consultas Útiles en MongoDB
-
-```javascript
-// Top 10 ejecuciones más rápidas
-db.job_executions_audit.find({
-  status: "COMPLETED"
-}).sort({ filesPerSecond: -1 }).limit(10)
-
-// Ejecuciones con más de 10M archivos
-db.job_executions_audit.find({
-  totalFilesIndexed: { $gt: 10000000 }
-})
-
-// Promedio de throughput
-db.job_executions_audit.aggregate([
-  { $match: { status: "COMPLETED" } },
-  { $group: {
-      _id: null,
-      avgThroughput: { $avg: "$filesPerSecond" },
-      maxThroughput: { $max: "$filesPerSecond" },
-      minThroughput: { $min: "$filesPerSecond" }
-  }}
-])
-
-// Ejecuciones por día (últimos 30 días)
-db.job_executions_audit.aggregate([
-  {
-    $match: {
-      startTime: {
-        $gte: new Date(new Date().setDate(new Date().getDate() - 30))
-      }
-    }
-  },
-  {
-    $group: {
-      _id: { $dateToString: { format: "%Y-%m-%d", date: "$startTime" } },
-      count: { $sum: 1 },
-      avgDuration: { $avg: "$durationMs" },
-      totalFiles: { $sum: "$totalFilesIndexed" }
-    }
-  },
-  { $sort: { _id: 1 } }
-])
-```
+| Síntoma | Posible causa | Verificación | Acción |
+|---|---|---|---|
+| `409 CONFLICT` al iniciar el job | Ya existe una ejecución en curso | Ver `GET /api/monitoring/jobs/running` | Esperar finalización o detener; manejado por `GlobalExceptionHandler` |
+| `SocketTimeoutException` o pool saturado | Latencia o `max-size` insuficiente | `GET /api/monitoring/sftp-pool/extended` | Aumentar `max-size`, `max-wait-millis`, revisar red |
+| Lectura muy lenta | Directorios enormes sin índices | Logs del reader y del discovery | Aumentar `chunk-size` y `thread-pool-size`; revisar latencia SFTP |
+| Altas tasas de `FAILED` en indexación | Archivos corruptos/0 bytes | `GET /api/monitoring/audit/stats` y logs del processor | Afinar filtros en `MetadataExtractorProcessor`; ignora temporales/ocultos |
+| Bulk upsert falla | Esquema/índices incompatibles | Logs del writer; revisar validadores | Validar schema y claves; dividir chunk o revisar tamaño batch |
+citeturn6search1
 
 ---
 
-## 🔧 Troubleshooting
+## Riesgos y mitigaciones
 
-### Errores Comunes
-
-| Error | Causa | Solución |
-|-------|-------|----------|
-| `Could not obtain SFTP session` | Pool saturado | Aumentar `pool.max-size` |
-| `Connection reset by peer` | Servidor cerró idle | Reducir `min-evictable-idle-time-millis` |
-| `Auth fail` | Credenciales incorrectas | Verificar `user` y `password` |
-| `OutOfMemoryError` | Heap insuficiente | Aumentar `-Xmx` |
-| `E11000 duplicate key` | Índice violado | `db.collection.reIndex()` |
-| `Audit record not found` | Job no registrado | Verificar listener configurado |
-
-### Comandos de Diagnóstico
-
-```bash
-# Verificar conectividad SFTP
-telnet sftp-host 22
-
-# Verificar MongoDB
-mongo localhost:30000/dvsmart-ms -u dvsmart_user -p eoQQqfTyMd --authenticationDatabase dvsmart-ms
-
-# Verificar PostgreSQL
-psql -h localhost -p 30005 -U dvsmart_ms -d dvsmart
-
-# Verificar jobs en ejecución
-curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/jobs/running | jq
-
-# Verificar última auditoría
-curl http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/latest | jq
-```
-
-### Diagnóstico de Auditoría
-
-```javascript
-// Conectar a MongoDB
-mongo localhost:30000/dvsmart-ms -u dvsmart_user -p eoQQqfTyMd --authenticationDatabase dvsmart-ms
-
-// Verificar registros de auditoría
-db.job_executions_audit.find().sort({ startTime: -1 }).limit(5).pretty()
-
-// Verificar ejecuciones sin finalizar
-db.job_executions_audit.find({
-  status: "STARTED",
-  startTime: { $lt: new Date(Date.now() - 3600000) }  // Más de 1 hora
-})
-
-// Verificar ejecuciones fallidas recientes
-db.job_executions_audit.find({
-  status: "FAILED",
-  startTime: { $gte: new Date(Date.now() - 86400000) }  // Últimas 24h
-}).sort({ startTime: -1 })
-```
+- **Inestabilidad de SFTP**: *Mitigación*: `retry-limit`, `max-wait-millis` mayores, **validación pre-uso** en el pool y **eviction** de conexiones inactivas. citeturn6search1
+- **Contención del pool**: *Mitigación*: dimensionar `max-size` y limitar `thread-pool-size`; usar *monitor* y alertas de utilización. citeturn6search1
+- **Sobrecarga de Mongo**: *Mitigación*: **bulk unordered**, tamaños de chunk moderados, índices adecuados en `files_index`. citeturn6search1
+- **Errores de data sucia**: *Mitigación*: filtros y tolerancia a fallos en processor (retorna `FAILED` sin romper el flujo). citeturn6search1
+- **Pérdida de trazabilidad**: *Mitigación*: auditoría por job con métricas, parámetros y errores persistidos. citeturn6search1
 
 ---
 
-## 🧪 Mantenimiento y Testing
+## Soporte y contacto
 
-### Tests Unitarios
-
-```bash
-# Ejecutar todos los tests
-mvn test
-
-# Ejecutar un test específico
-mvn test -Dtest=JobAuditServiceTest
-
-# Tests con cobertura
-mvn clean test jacoco:report
-```
-
-### Limpieza de Datos
-
-**MongoDB:**
-
-```javascript
-// Eliminar auditorías antiguas (más de 90 días)
-db.job_executions_audit.deleteMany({
-  createdAt: { $lt: new Date(Date.now() - 90*24*60*60*1000) }
-})
-
-// Eliminar solo ejecuciones fallidas antiguas
-db.job_executions_audit.deleteMany({
-  status: "FAILED",
-  createdAt: { $lt: new Date(Date.now() - 30*24*60*60*1000) }
-})
-
-// Verificar espacio usado
-db.job_executions_audit.stats()
-```
-
-**PostgreSQL:**
-
-```sql
--- Limpiar jobs antiguos (más de 30 días)
-DELETE FROM BATCH_STEP_EXECUTION
-WHERE job_execution_id IN (
-  SELECT job_execution_id
-  FROM BATCH_JOB_EXECUTION
-  WHERE create_time < NOW() - INTERVAL '30 days'
-);
-
-DELETE FROM BATCH_JOB_EXECUTION_PARAMS
-WHERE job_execution_id IN (
-  SELECT job_execution_id
-  FROM BATCH_JOB_EXECUTION
-  WHERE create_time < NOW() - INTERVAL '30 days'
-);
-
-DELETE FROM BATCH_JOB_EXECUTION
-WHERE create_time < NOW() - INTERVAL '30 days';
-
--- Vacuum
-VACUUM FULL;
-```
-
-### Reinicialización Completa
-
-```bash
-# 1. Detener la aplicación
-kill {pid}
-
-# 2. Limpiar MongoDB
-mongo localhost:30000/dvsmart-ms -u dvsmart_user -p eoQQqfTyMd --authenticationDatabase dvsmart-ms <<EOF
-use dvsmart-ms
-db.files_index.deleteMany({})
-db.job_executions_audit.deleteMany({})
-EOF
-
-# 3. Limpiar PostgreSQL
-psql -h localhost -p 30005 -U dvsmart_ms -d dvsmart <<EOF
-TRUNCATE TABLE BATCH_STEP_EXECUTION CASCADE;
-TRUNCATE TABLE BATCH_JOB_EXECUTION_PARAMS CASCADE;
-TRUNCATE TABLE BATCH_JOB_EXECUTION CASCADE;
-TRUNCATE TABLE BATCH_JOB_INSTANCE CASCADE;
-EOF
-
-# 4. Reiniciar
-java -jar target/dvsmart_indexing_api.jar
-```
+- Responsable técnico: **hahuaranga@indracompany.com**. citeturn6search1
 
 ---
 
-## 📚 Referencias
+## Referencias
 
-- [Spring Batch Documentation](https://docs.spring.io/spring-batch/docs/current/reference/html/)
-- [Spring Integration SFTP](https://docs.spring.io/spring-integration/docs/current/reference/html/sftp.html)
-- [Apache Commons Pool2](https://commons.apache.org/proper/commons-pool/)
-- [MongoDB Java Driver](https://www.mongodb.com/docs/drivers/java/sync/current/)
-- [PostgreSQL JDBC](https://jdbc.postgresql.org/documentation/)
+- Código fuente: controllers, batch config, reader/processor/writer, servicios de dominio, configuración SFTP y repositorios Mongo. citeturn6search1
+- `application.properties` y scripts de inicialización de Mongo con **validadores** e **índices** para `files_index` y `job_executions_audit`. citeturn6search1
 
----
-
-## 🤝 Soporte y Contacto
-
-**Equipo de Mantenimiento**: DvSmart Team  
-**Contacto**: hahuaranga@indracompany.com  
-**Repositorio**: [Enlace interno al repositorio]  
-**Documentación Técnica**: [Enlace a documentación detallada]

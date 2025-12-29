@@ -15,6 +15,7 @@ package com.indra.minsait.dvsmart.indexing.domain.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.sshd.sftp.client.SftpClient;
+import org.springframework.integration.file.remote.session.Session;
 import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
 import org.springframework.stereotype.Service;
 import java.util.LinkedList;
@@ -71,11 +72,11 @@ public class DirectoryDiscoveryService {
         }
     }
 
-    /**
+    /** 
      * Escaneo recursivo BFS interno (dentro de una sesión).
      */
     private void scanRecursive(
-            org.springframework.integration.file.remote.session.Session<SftpClient.DirEntry> session,
+            Session<SftpClient.DirEntry> session,
             String baseDir,
             Queue<String> directories) throws Exception {
         
