@@ -1,7 +1,7 @@
 /*
  * /////////////////////////////////////////////////////////////////////////////
  *
- * Copyright (c) 2025 Indra Sistemas, S.A. All Rights Reserved.
+ * Copyright (c) 2026 Indra Sistemas, S.A. All Rights Reserved.
  * http://www.indracompany.com/
  *
  * The contents of this file are owned by Indra Sistemas, S.A. copyright holder.
