@@ -31,18 +31,18 @@ import java.util.Optional;
  */
 @Repository
 public interface JobExecutionAuditRepository extends MongoRepository<JobExecutionAuditDocument, String> {
-    
-    Optional<JobExecutionAuditDocument> findByAuditId(String auditId);
-    
+//    
+//    Optional<JobExecutionAuditDocument> findByAuditId(String auditId);
+//    
     Optional<JobExecutionAuditDocument> findByJobExecutionId(Long jobExecutionId);
-    
-    List<JobExecutionAuditDocument> findByJobNameOrderByStartTimeDesc(String jobName);
-    
-    List<JobExecutionAuditDocument> findByStatusOrderByStartTimeDesc(String status);
-    
-    List<JobExecutionAuditDocument> findByJobNameAndStatusOrderByStartTimeDesc(String jobName, String status);
-    
-    List<JobExecutionAuditDocument> findByStartTimeBetweenOrderByStartTimeDesc(Instant start, Instant end);
-    
-    long countByJobNameAndStatus(String jobName, String status);
+//    
+//    List<JobExecutionAuditDocument> findByJobNameOrderByStartTimeDesc(String jobName);
+//    
+//    List<JobExecutionAuditDocument> findByStatusOrderByStartTimeDesc(String status);
+//    
+//    List<JobExecutionAuditDocument> findByJobNameAndStatusOrderByStartTimeDesc(String jobName, String status);
+//    
+//    List<JobExecutionAuditDocument> findByStartTimeBetweenOrderByStartTimeDesc(Instant start, Instant end);
+//    
+//    long countByJobNameAndStatus(String jobName, String status);
 }

@@ -179,51 +179,57 @@
 
 			<!-- CopyRight Plugin -->
 			<plugin>
-				<groupId>com.mycila</groupId>
-				<artifactId>license-maven-plugin</artifactId>
-				<version>${license.maven.plugin.version}</version>
-				<configuration>
-					<!-- Ruta del banner -->
-					<header>src/main/resources/license-header.txt</header>
-
-					<!-- Aplicar solo a archivos donde corresponde -->
-					<includes>
-						<include>**/*.java</include>
-					</includes>
-
-					<!-- Evitar modificar código generado o configuraciones -->
-					<excludes>
-						<exclude>**/target/**</exclude>
-						<exclude>**/generated/**</exclude>
-					</excludes>
-
-					<!-- Variables dinámicas -->
-					<properties>
-						<year>${maven.build.timestamp}</year>
-					</properties>
-
-					<!-- Etiquetas conocidas para insertar correctamente el
-					header -->
-					<mapping>
-						<java>SLASHSTAR_STYLE</java>
-					</mapping>
-
-					<!-- Configuraciones adicionales importantes -->
-					<strictCheck>true</strictCheck>
-					<useDefaultExcludes>true</useDefaultExcludes>
-				</configuration>
-
-				<executions>
-					<!-- Ejecuta el format en la fase process-sources (antes de
-					compile) -->
-					<execution>
-						<id>apply-license-headers</id>
-						<phase>process-sources</phase>
-						<goals>
-							<goal>format</goal>
-						</goals>
-					</execution>
-				</executions>
+			    <groupId>com.mycila</groupId>
+			    <artifactId>license-maven-plugin</artifactId>
+			    <version>${license.maven.plugin.version}</version>
+			
+			    <configuration>
+			
+			        <licenseSets>
+			            <licenseSet>
+			
+			                <!-- Ruta del banner -->
+			                <header>src/main/resources/license-header.txt</header>
+			
+			                <!-- Aplicar solo a archivos donde corresponde -->
+			                <includes>
+			                    <include>**/*.java</include>
+			                </includes>
+			
+			                <!-- Evitar modificar código generado o configuraciones -->
+			                <excludes>
+			                    <exclude>**/target/**</exclude>
+			                    <exclude>**/generated/**</exclude>
+			                </excludes>
+			
+			            </licenseSet>
+			        </licenseSets>
+			
+			        <!-- Variables dinámicas -->
+			        <properties>
+			            <year>${maven.build.timestamp}</year>
+			        </properties>
+			
+			        <!-- Etiquetas conocidas para insertar correctamente el header -->
+			        <mapping>
+			            <java>SLASHSTAR_STYLE</java>
+			        </mapping>
+			
+			        <!-- Configuraciones adicionales importantes -->
+			        <strictCheck>true</strictCheck>
+			        <useDefaultExcludes>true</useDefaultExcludes>
+			
+			    </configuration>
+			
+			    <executions>
+			        <execution>
+			            <id>apply-license-headers</id>
+			            <phase>process-sources</phase>
+			            <goals>
+			                <goal>format</goal>
+			            </goals>
+			        </execution>
+			    </executions>
 			</plugin>
 
 			<!-- Maven Surefire Plugin (para tests) -->

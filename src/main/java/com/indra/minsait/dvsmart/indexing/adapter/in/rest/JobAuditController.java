@@ -50,94 +50,94 @@ import java.util.Map;
 	# Obtener ejecuciones en un rango de fechas
 	curl "http://localhost:8080/dvsmart_indexing_api/api/monitoring/audit/range?start=2025-12-01T00:00:00Z&end=2025-12-31T23:59:59Z" | jq
  */
-@Slf4j
-@RestController
-@RequestMapping("/api/monitoring/audit")
-@RequiredArgsConstructor
+//@Slf4j
+//@RestController
+//@RequestMapping("/api/monitoring/audit")
+//@RequiredArgsConstructor
 public class JobAuditController {
     
-    private final JobExecutionAuditRepository auditRepository;
-    
-    /**
-     * GET /api/monitoring/audit/jobs/{jobName}
-     * Obtiene el historial de auditoría de un job específico.
-     */
-    @GetMapping("/jobs/{jobName}")
-    public ResponseEntity<List<JobExecutionAuditDocument>> getJobAuditHistory(@PathVariable String jobName) {
-        log.info("Fetching audit history for job: {}", jobName);
-        List<JobExecutionAuditDocument> audits = auditRepository.findByJobNameOrderByStartTimeDesc(jobName);
-        return ResponseEntity.ok(audits);
-    }
-    
-    /**
-     * GET /api/monitoring/audit/status/{status}
-     * Obtiene ejecuciones por estado.
-     */
-    @GetMapping("/status/{status}")
-    public ResponseEntity<List<JobExecutionAuditDocument>> getByStatus(@PathVariable String status) {
-        log.info("Fetching audits with status: {}", status);
-        List<JobExecutionAuditDocument> audits = auditRepository.findByStatusOrderByStartTimeDesc(status);
-        return ResponseEntity.ok(audits);
-    }
-    
-    /**
-     * GET /api/monitoring/audit/execution/{jobExecutionId}
-     * Obtiene auditoría de una ejecución específica.
-     */
-    @GetMapping("/execution/{jobExecutionId}")
-    public ResponseEntity<JobExecutionAuditDocument> getByExecutionId(@PathVariable Long jobExecutionId) {
-        log.info("Fetching audit for job execution: {}", jobExecutionId);
-        return auditRepository.findByJobExecutionId(jobExecutionId)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
-    }
-    
-    /**
-     * GET /api/monitoring/audit/range?start=...&end=...
-     * Obtiene ejecuciones en un rango de fechas.
-     */
-    @GetMapping("/range")
-    public ResponseEntity<List<JobExecutionAuditDocument>> getByDateRange(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant start,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant end) {
-        log.info("Fetching audits between {} and {}", start, end);
-        List<JobExecutionAuditDocument> audits = auditRepository.findByStartTimeBetweenOrderByStartTimeDesc(start, end);
-        return ResponseEntity.ok(audits);
-    }
-    
-    /**
-     * GET /api/monitoring/audit/stats
-     * Obtiene estadísticas globales de auditoría.
-     */
-    @GetMapping("/stats")
-    public ResponseEntity<Map<String, Object>> getGlobalStats() {
-        log.info("Fetching global audit stats");
-        
-        long totalExecutions = auditRepository.count();
-        long completedExecutions = auditRepository.countByJobNameAndStatus("BATCH-INDEX-FULL", "COMPLETED");
-        long failedExecutions = auditRepository.countByJobNameAndStatus("BATCH-INDEX-FULL", "FAILED");
-        long startedExecutions = auditRepository.countByJobNameAndStatus("BATCH-INDEX-FULL", "STARTED");
-        
-        return ResponseEntity.ok(Map.of(
-            "totalExecutions", totalExecutions,
-            "completedExecutions", completedExecutions,
-            "failedExecutions", failedExecutions,
-            "startedExecutions", startedExecutions
-        ));
-    }
-    
-    /**
-     * GET /api/monitoring/audit/latest
-     * Obtiene la última ejecución de cada job.
-     */
-    @GetMapping("/latest")
-    public ResponseEntity<List<JobExecutionAuditDocument>> getLatestExecutions() {
-        log.info("Fetching latest executions");
-        // Simplificado: devuelve últimas 10 ejecuciones de BATCH-INDEX-FULL
-        List<JobExecutionAuditDocument> audits = auditRepository.findByJobNameOrderByStartTimeDesc("BATCH-INDEX-FULL")
-                .stream()
-                .limit(10)
-                .toList();
-        return ResponseEntity.ok(audits);
-    }
+//    private final JobExecutionAuditRepository auditRepository;
+//    
+//    /**
+//     * GET /api/monitoring/audit/jobs/{jobName}
+//     * Obtiene el historial de auditoría de un job específico.
+//     */
+//    @GetMapping("/jobs/{jobName}")
+//    public ResponseEntity<List<JobExecutionAuditDocument>> getJobAuditHistory(@PathVariable String jobName) {
+//        log.info("Fetching audit history for job: {}", jobName);
+//        List<JobExecutionAuditDocument> audits = auditRepository.findByJobNameOrderByStartTimeDesc(jobName);
+//        return ResponseEntity.ok(audits);
+//    }
+//    
+//    /**
+//     * GET /api/monitoring/audit/status/{status}
+//     * Obtiene ejecuciones por estado.
+//     */
+//    @GetMapping("/status/{status}")
+//    public ResponseEntity<List<JobExecutionAuditDocument>> getByStatus(@PathVariable String status) {
+//        log.info("Fetching audits with status: {}", status);
+//        List<JobExecutionAuditDocument> audits = auditRepository.findByStatusOrderByStartTimeDesc(status);
+//        return ResponseEntity.ok(audits);
+//    }
+//    
+//    /**
+//     * GET /api/monitoring/audit/execution/{jobExecutionId}
+//     * Obtiene auditoría de una ejecución específica.
+//     */
+//    @GetMapping("/execution/{jobExecutionId}")
+//    public ResponseEntity<JobExecutionAuditDocument> getByExecutionId(@PathVariable Long jobExecutionId) {
+//        log.info("Fetching audit for job execution: {}", jobExecutionId);
+//        return auditRepository.findByJobExecutionId(jobExecutionId)
+//                .map(ResponseEntity::ok)
+//                .orElse(ResponseEntity.notFound().build());
+//    }
+//    
+//    /**
+//     * GET /api/monitoring/audit/range?start=...&end=...
+//     * Obtiene ejecuciones en un rango de fechas.
+//     */
+//    @GetMapping("/range")
+//    public ResponseEntity<List<JobExecutionAuditDocument>> getByDateRange(
+//            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant start,
+//            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant end) {
+//        log.info("Fetching audits between {} and {}", start, end);
+//        List<JobExecutionAuditDocument> audits = auditRepository.findByStartTimeBetweenOrderByStartTimeDesc(start, end);
+//        return ResponseEntity.ok(audits);
+//    }
+//    
+//    /**
+//     * GET /api/monitoring/audit/stats
+//     * Obtiene estadísticas globales de auditoría.
+//     */
+//    @GetMapping("/stats")
+//    public ResponseEntity<Map<String, Object>> getGlobalStats() {
+//        log.info("Fetching global audit stats");
+//        
+//        long totalExecutions = auditRepository.count();
+//        long completedExecutions = auditRepository.countByJobNameAndStatus("BATCH-INDEX-FULL", "COMPLETED");
+//        long failedExecutions = auditRepository.countByJobNameAndStatus("BATCH-INDEX-FULL", "FAILED");
+//        long startedExecutions = auditRepository.countByJobNameAndStatus("BATCH-INDEX-FULL", "STARTED");
+//        
+//        return ResponseEntity.ok(Map.of(
+//            "totalExecutions", totalExecutions,
+//            "completedExecutions", completedExecutions,
+//            "failedExecutions", failedExecutions,
+//            "startedExecutions", startedExecutions
+//        ));
+//    }
+//    
+//    /**
+//     * GET /api/monitoring/audit/latest
+//     * Obtiene la última ejecución de cada job.
+//     */
+//    @GetMapping("/latest")
+//    public ResponseEntity<List<JobExecutionAuditDocument>> getLatestExecutions() {
+//        log.info("Fetching latest executions");
+//        // Simplificado: devuelve últimas 10 ejecuciones de BATCH-INDEX-FULL
+//        List<JobExecutionAuditDocument> audits = auditRepository.findByJobNameOrderByStartTimeDesc("BATCH-INDEX-FULL")
+//                .stream()
+//                .limit(10)
+//                .toList();
+//        return ResponseEntity.ok(audits);
+//    }
 }
