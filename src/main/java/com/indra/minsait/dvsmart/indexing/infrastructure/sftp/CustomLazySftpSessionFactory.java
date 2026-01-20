@@ -80,7 +80,7 @@ public class CustomLazySftpSessionFactory implements SessionFactory<SftpClient.D
         
         // Eviction (limpieza de inactivas)
         config.setTimeBetweenEvictionRuns(Duration.ofMillis(timeBetweenEvictionRunsMillis));
-        config.setMinEvictableIdleTime(Duration.ofMillis(minEvictableIdleTimeMillis));
+        config.setMinEvictableIdleDuration(Duration.ofMillis(minEvictableIdleTimeMillis));
         config.setNumTestsPerEvictionRun(3);
         
         // Crear pool

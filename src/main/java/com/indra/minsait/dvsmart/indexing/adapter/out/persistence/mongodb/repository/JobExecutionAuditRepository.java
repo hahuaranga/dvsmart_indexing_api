@@ -16,8 +16,6 @@ package com.indra.minsait.dvsmart.indexing.adapter.out.persistence.mongodb.repos
 import com.indra.minsait.dvsmart.indexing.adapter.out.persistence.mongodb.entity.JobExecutionAuditDocument;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
-import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -31,18 +29,6 @@ import java.util.Optional;
  */
 @Repository
 public interface JobExecutionAuditRepository extends MongoRepository<JobExecutionAuditDocument, String> {
-//    
-//    Optional<JobExecutionAuditDocument> findByAuditId(String auditId);
-//    
+   
     Optional<JobExecutionAuditDocument> findByJobExecutionId(Long jobExecutionId);
-//    
-//    List<JobExecutionAuditDocument> findByJobNameOrderByStartTimeDesc(String jobName);
-//    
-//    List<JobExecutionAuditDocument> findByStatusOrderByStartTimeDesc(String status);
-//    
-//    List<JobExecutionAuditDocument> findByJobNameAndStatusOrderByStartTimeDesc(String jobName, String status);
-//    
-//    List<JobExecutionAuditDocument> findByStartTimeBetweenOrderByStartTimeDesc(Instant start, Instant end);
-//    
-//    long countByJobNameAndStatus(String jobName, String status);
 }
